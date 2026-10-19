@@ -1,0 +1,52 @@
+# Example: ForkBridge in Azure Pipelines (plan + simulate on demand; publication stays manual).
+# The agent needs: git >= 2.38, .NET 10 SDK, the repositories checked out side by side, and a
+# forkbridge.yml pointing at them. Validation runs in CI because the pipeline itself is trusted.
+trigger: none
+parameters:
+  - name: pair
+    type: string
+    default: backend
+  - name: from
+    type: string
+    default: isl
+  - name: to
+    type: string
+    default: qisl
+  - name: sourceRef
+    type: string
+
+pool:
+  vmImage: windows-latest
+
+variables:
+  FORKBRIDGE_TRUST_VALIDATION: '1'
+  FORKBRIDGE_CONFIG: $(Pipeline.Workspace)/forkbridge/forkbridge.ci.yml
+
+steps:
+  - checkout: self                       # the ForkBridge repository
+    path: forkbridge
+  - checkout: git://EBS (Platform)/Backend          # PLACEHOLDER: ISL-Backend
+    path: repos/ISL-Backend
+    fetchDepth: 0                        # full history is required (merge-base, provenance)
+  - checkout: git://QiSL/Backend                    # PLACEHOLDER: QiSL Backend (cross-org needs a service connection)
+    path: repos/Backend
+    fetchDepth: 0
+  - task: UseDotNet@2
+    inputs: { packageType: sdk, useGlobalJson: true, workingDirectory: $(Pipeline.Workspace)/forkbridge }
+  - pwsh: |
+      dotnet build $(Pipeline.Workspace)/forkbridge/src/ForkBridge.Cli -c Release
+      $fb = "$(Pipeline.Workspace)/forkbridge/src/ForkBridge.Cli/bin/Release/net10.0/forkbridge.dll"
+      dotnet $fb plan --pair ${{ parameters.pair }} --from ${{ parameters.from }} --to ${{ parameters.to }} --source-ref ${{ parameters.sourceRef }} --json > plan.json
+      $code = $LASTEXITCODE
+      if ($code -notin 0, 10) { exit $code }     # 10 = REVIEW_REQUIRED: still simulate so reviewers get evidence
+      $planId = (Get-Content plan.json | ConvertFrom-Json).id
+      dotnet $fb simulate --plan $planId --json > run.json
+      $code = $LASTEXITCODE
+      $runId = (Get-Content run.json | ConvertFrom-Json).id
+      dotnet $fb report --run $runId --format markdown > forkbridge-report.md
+      exit $code                                  # documented exit codes: 0 READY, 10 REVIEW, 11 BLOCKED, 12 VALIDATION_FAILED
+    displayName: ForkBridge plan + simulate
+  - publish: forkbridge-report.md
+    artifact: forkbridge-report
+    condition: always()
+# Publication is deliberately not automated: a human runs `forkbridge publish --approve --candidate <sha>`.
