@@ -1,0 +1,17 @@
+<Project Sdk="Microsoft.NET.Sdk.Web">
+  <PropertyGroup>
+    <AssemblyName>forkbridge-web</AssemblyName>
+    <RootNamespace>ForkBridge.Web</RootNamespace>
+  </PropertyGroup>
+  <ItemGroup>
+    <ProjectReference Include="..\ForkBridge.Core\ForkBridge.Core.csproj" />
+  </ItemGroup>
+  <ItemGroup>
+    <!-- Angular build output (ui/ -> npm run build). Copied next to the binaries so the web root is
+         found regardless of the current directory. -->
+    <Content Update="wwwroot\**" CopyToOutputDirectory="PreserveNewest" CopyToPublishDirectory="PreserveNewest" />
+  </ItemGroup>
+  <ItemGroup>
+    <InternalsVisibleTo Include="ForkBridge.Tests" />
+  </ItemGroup>
+</Project>
