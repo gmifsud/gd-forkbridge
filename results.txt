@@ -1,0 +1,567 @@
+  Determining projects to restore...
+  All projects are up-to-date for restore.
+  ForkBridge.Core -> D:\Repos\Tools\gd-forkbridge\src\ForkBridge.Core\bin\Debug\net10.0\ForkBridge.Core.dll
+  FixtureTool -> D:\Repos\Tools\gd-forkbridge\tests\FixtureTool\bin\Debug\net10.0\FixtureTool.dll
+  ForkBridge.Cli -> D:\Repos\Tools\gd-forkbridge\src\ForkBridge.Cli\bin\Debug\net10.0\forkbridge.dll
+  ForkBridge.Web -> D:\Repos\Tools\gd-forkbridge\src\ForkBridge.Web\bin\Debug\net10.0\forkbridge-web.dll
+  ForkBridge.Tests -> D:\Repos\Tools\gd-forkbridge\tests\ForkBridge.Tests\bin\Debug\net10.0\ForkBridge.Tests.dll
+Test run for D:\Repos\Tools\gd-forkbridge\tests\ForkBridge.Tests\bin\Debug\net10.0\ForkBridge.Tests.dll (.NETCoreApp,Version=v10.0)
+A total of 1 test files matched the specified pattern.
+  Failed ForkBridge.Tests.TransferTests.Mixed_commit_whose_shared_part_uses_excluded_code_is_blocked [1 s]
+  Error Message:
+   System.InvalidOperationException : git rm -q -r App.VAM in C:\Users\grego\AppData\Local\Temp\fbtest-3-702bd654\work\ISL-Backend failed: error: the following files have local modifications:
+    App.VAM/Vam/Vam.csproj
+    App.VAM/Vam/Vehicle.cs
+(use --cached to keep the file, or -f to force removal)
+
+  Stack Trace:
+     at ForkBridge.Tests.Fixtures.RepoFixture.GitEnv(String dir, Dictionary`2 env, String[] args) in D:\Repos\Tools\gd-forkbridge\tests\ForkBridge.Tests\Fixtures\RepoFixture.cs:line 53
+   at ForkBridge.Tests.Fixtures.RepoFixture.Git(String dir, String[] args) in D:\Repos\Tools\gd-forkbridge\tests\ForkBridge.Tests\Fixtures\RepoFixture.cs:line 37
+   at ForkBridge.Tests.Fixtures.RepoFixture.BuildBackend() in D:\Repos\Tools\gd-forkbridge\tests\ForkBridge.Tests\Fixtures\RepoFixture.cs:line 135
+   at ForkBridge.Tests.Fixtures.RepoFixture..ctor(Boolean frontend) in D:\Repos\Tools\gd-forkbridge\tests\ForkBridge.Tests\Fixtures\RepoFixture.cs:line 31
+   at ForkBridge.Tests.TransferTests.Mixed_commit_whose_shared_part_uses_excluded_code_is_blocked() in D:\Repos\Tools\gd-forkbridge\tests\ForkBridge.Tests\TransferTests.cs:line 136
+--- End of stack trace from previous location ---
+  Failed ForkBridge.Tests.VerticalSliceTests.One_shared_commit_flows_from_QiSL_to_ISL_and_is_READY [1 s]
+  Error Message:
+   System.InvalidOperationException : git rm -q -r App.VAM in C:\Users\grego\AppData\Local\Temp\fbtest-4-3384c460\work\ISL-Backend failed: error: the following files have local modifications:
+    App.VAM/Vam/Vam.csproj
+    App.VAM/Vam/Vehicle.cs
+(use --cached to keep the file, or -f to force removal)
+
+  Stack Trace:
+     at ForkBridge.Tests.Fixtures.RepoFixture.GitEnv(String dir, Dictionary`2 env, String[] args) in D:\Repos\Tools\gd-forkbridge\tests\ForkBridge.Tests\Fixtures\RepoFixture.cs:line 53
+   at ForkBridge.Tests.Fixtures.RepoFixture.Git(String dir, String[] args) in D:\Repos\Tools\gd-forkbridge\tests\ForkBridge.Tests\Fixtures\RepoFixture.cs:line 37
+   at ForkBridge.Tests.Fixtures.RepoFixture.BuildBackend() in D:\Repos\Tools\gd-forkbridge\tests\ForkBridge.Tests\Fixtures\RepoFixture.cs:line 135
+   at ForkBridge.Tests.Fixtures.RepoFixture..ctor(Boolean frontend) in D:\Repos\Tools\gd-forkbridge\tests\ForkBridge.Tests\Fixtures\RepoFixture.cs:line 31
+   at ForkBridge.Tests.VerticalSliceTests.One_shared_commit_flows_from_QiSL_to_ISL_and_is_READY() in D:\Repos\Tools\gd-forkbridge\tests\ForkBridge.Tests\VerticalSliceTests.cs:line 17
+--- End of stack trace from previous location ---
+  Failed ForkBridge.Tests.PrerequisiteAndGraphTests.Selecting_a_commit_without_its_prerequisite_blocks_with_a_missing_import [1 s]
+  Error Message:
+   System.InvalidOperationException : git rm -q -r App.VAM in C:\Users\grego\AppData\Local\Temp\fbtest-2-562eaa87\work\ISL-Backend failed: error: the following files have local modifications:
+    App.VAM/Vam/Vam.csproj
+    App.VAM/Vam/Vehicle.cs
+(use --cached to keep the file, or -f to force removal)
+
+  Stack Trace:
+     at ForkBridge.Tests.Fixtures.RepoFixture.GitEnv(String dir, Dictionary`2 env, String[] args) in D:\Repos\Tools\gd-forkbridge\tests\ForkBridge.Tests\Fixtures\RepoFixture.cs:line 53
+   at ForkBridge.Tests.Fixtures.RepoFixture.Git(String dir, String[] args) in D:\Repos\Tools\gd-forkbridge\tests\ForkBridge.Tests\Fixtures\RepoFixture.cs:line 37
+   at ForkBridge.Tests.Fixtures.RepoFixture.BuildBackend() in D:\Repos\Tools\gd-forkbridge\tests\ForkBridge.Tests\Fixtures\RepoFixture.cs:line 135
+   at ForkBridge.Tests.Fixtures.RepoFixture..ctor(Boolean frontend) in D:\Repos\Tools\gd-forkbridge\tests\ForkBridge.Tests\Fixtures\RepoFixture.cs:line 31
+   at ForkBridge.Tests.PrerequisiteAndGraphTests.Selecting_a_commit_without_its_prerequisite_blocks_with_a_missing_import() in D:\Repos\Tools\gd-forkbridge\tests\ForkBridge.Tests\TransferTests.cs:line 291
+--- End of stack trace from previous location ---
+  Failed ForkBridge.Tests.HistoryAndIdempotencyTests.Development_branch_is_never_turned_into_an_invented_feature_range [1 s]
+  Error Message:
+   System.InvalidOperationException : git rm -q -r App.VAM in C:\Users\grego\AppData\Local\Temp\fbtest-1-49d7617a\work\ISL-Backend failed: error: the following files have local modifications:
+    App.VAM/Vam/Vam.csproj
+    App.VAM/Vam/Vehicle.cs
+(use --cached to keep the file, or -f to force removal)
+
+  Stack Trace:
+     at ForkBridge.Tests.Fixtures.RepoFixture.GitEnv(String dir, Dictionary`2 env, String[] args) in D:\Repos\Tools\gd-forkbridge\tests\ForkBridge.Tests\Fixtures\RepoFixture.cs:line 53
+   at ForkBridge.Tests.Fixtures.RepoFixture.Git(String dir, String[] args) in D:\Repos\Tools\gd-forkbridge\tests\ForkBridge.Tests\Fixtures\RepoFixture.cs:line 37
+   at ForkBridge.Tests.Fixtures.RepoFixture.BuildBackend() in D:\Repos\Tools\gd-forkbridge\tests\ForkBridge.Tests\Fixtures\RepoFixture.cs:line 135
+   at ForkBridge.Tests.Fixtures.RepoFixture..ctor(Boolean frontend) in D:\Repos\Tools\gd-forkbridge\tests\ForkBridge.Tests\Fixtures\RepoFixture.cs:line 31
+   at ForkBridge.Tests.HistoryAndIdempotencyTests.Development_branch_is_never_turned_into_an_invented_feature_range() in D:\Repos\Tools\gd-forkbridge\tests\ForkBridge.Tests\HistoryAndIdempotencyTests.cs:line 23
+--- End of stack trace from previous location ---
+  Failed ForkBridge.Tests.WebSecurityTests.Api_requires_token_loopback_host_same_origin_and_json [1 s]
+  Error Message:
+   System.InvalidOperationException : git rm -q -r App.VAM in C:\Users\grego\AppData\Local\Temp\fbtest-5-077e23bf\work\ISL-Backend failed: error: the following files have local modifications:
+    App.VAM/Vam/Vam.csproj
+    App.VAM/Vam/Vehicle.cs
+(use --cached to keep the file, or -f to force removal)
+
+  Stack Trace:
+     at ForkBridge.Tests.Fixtures.RepoFixture.GitEnv(String dir, Dictionary`2 env, String[] args) in D:\Repos\Tools\gd-forkbridge\tests\ForkBridge.Tests\Fixtures\RepoFixture.cs:line 53
+   at ForkBridge.Tests.Fixtures.RepoFixture.Git(String dir, String[] args) in D:\Repos\Tools\gd-forkbridge\tests\ForkBridge.Tests\Fixtures\RepoFixture.cs:line 37
+   at ForkBridge.Tests.Fixtures.RepoFixture.BuildBackend() in D:\Repos\Tools\gd-forkbridge\tests\ForkBridge.Tests\Fixtures\RepoFixture.cs:line 135
+   at ForkBridge.Tests.Fixtures.RepoFixture..ctor(Boolean frontend) in D:\Repos\Tools\gd-forkbridge\tests\ForkBridge.Tests\Fixtures\RepoFixture.cs:line 31
+   at ForkBridge.Tests.WebSecurityTests.Api_requires_token_loopback_host_same_origin_and_json() in D:\Repos\Tools\gd-forkbridge\tests\ForkBridge.Tests\WebSecurityTests.cs:line 18
+--- End of stack trace from previous location ---
+  Failed ForkBridge.Tests.TransferTests.Mixed_shared_and_product_commit_is_partial_and_requires_review [1 s]
+  Error Message:
+   System.InvalidOperationException : git rm -q -r App.VAM in C:\Users\grego\AppData\Local\Temp\fbtest-6-219adac6\work\ISL-Backend failed: error: the following files have local modifications:
+    App.VAM/Vam/Vam.csproj
+    App.VAM/Vam/Vehicle.cs
+(use --cached to keep the file, or -f to force removal)
+
+  Stack Trace:
+     at ForkBridge.Tests.Fixtures.RepoFixture.GitEnv(String dir, Dictionary`2 env, String[] args) in D:\Repos\Tools\gd-forkbridge\tests\ForkBridge.Tests\Fixtures\RepoFixture.cs:line 53
+   at ForkBridge.Tests.Fixtures.RepoFixture.Git(String dir, String[] args) in D:\Repos\Tools\gd-forkbridge\tests\ForkBridge.Tests\Fixtures\RepoFixture.cs:line 37
+   at ForkBridge.Tests.Fixtures.RepoFixture.BuildBackend() in D:\Repos\Tools\gd-forkbridge\tests\ForkBridge.Tests\Fixtures\RepoFixture.cs:line 135
+   at ForkBridge.Tests.Fixtures.RepoFixture..ctor(Boolean frontend) in D:\Repos\Tools\gd-forkbridge\tests\ForkBridge.Tests\Fixtures\RepoFixture.cs:line 31
+   at ForkBridge.Tests.TransferTests.Mixed_shared_and_product_commit_is_partial_and_requires_review() in D:\Repos\Tools\gd-forkbridge\tests\ForkBridge.Tests\TransferTests.cs:line 108
+--- End of stack trace from previous location ---
+  Failed ForkBridge.Tests.HistoryAndIdempotencyTests.Merge_only_conflict_resolution_changes_are_detected_and_block [1 s]
+  Error Message:
+   System.InvalidOperationException : git rm -q -r App.VAM in C:\Users\grego\AppData\Local\Temp\fbtest-7-2fd2e69a\work\ISL-Backend failed: error: the following files have local modifications:
+    App.VAM/Vam/Vam.csproj
+    App.VAM/Vam/Vehicle.cs
+(use --cached to keep the file, or -f to force removal)
+
+  Stack Trace:
+     at ForkBridge.Tests.Fixtures.RepoFixture.GitEnv(String dir, Dictionary`2 env, String[] args) in D:\Repos\Tools\gd-forkbridge\tests\ForkBridge.Tests\Fixtures\RepoFixture.cs:line 53
+   at ForkBridge.Tests.Fixtures.RepoFixture.Git(String dir, String[] args) in D:\Repos\Tools\gd-forkbridge\tests\ForkBridge.Tests\Fixtures\RepoFixture.cs:line 37
+   at ForkBridge.Tests.Fixtures.RepoFixture.BuildBackend() in D:\Repos\Tools\gd-forkbridge\tests\ForkBridge.Tests\Fixtures\RepoFixture.cs:line 135
+   at ForkBridge.Tests.Fixtures.RepoFixture..ctor(Boolean frontend) in D:\Repos\Tools\gd-forkbridge\tests\ForkBridge.Tests\Fixtures\RepoFixture.cs:line 31
+   at ForkBridge.Tests.HistoryAndIdempotencyTests.Merge_only_conflict_resolution_changes_are_detected_and_block() in D:\Repos\Tools\gd-forkbridge\tests\ForkBridge.Tests\HistoryAndIdempotencyTests.cs:line 47
+--- End of stack trace from previous location ---
+  Failed ForkBridge.Tests.TransferTests.Backend_ISL_to_QiSL_feature_branch [1 s]
+  Error Message:
+   System.InvalidOperationException : git rm -q -r App.VAM in C:\Users\grego\AppData\Local\Temp\fbtest-8-69e5b54d\work\ISL-Backend failed: error: the following files have local modifications:
+    App.VAM/Vam/Vam.csproj
+    App.VAM/Vam/Vehicle.cs
+(use --cached to keep the file, or -f to force removal)
+
+  Stack Trace:
+     at ForkBridge.Tests.Fixtures.RepoFixture.GitEnv(String dir, Dictionary`2 env, String[] args) in D:\Repos\Tools\gd-forkbridge\tests\ForkBridge.Tests\Fixtures\RepoFixture.cs:line 53
+   at ForkBridge.Tests.Fixtures.RepoFixture.Git(String dir, String[] args) in D:\Repos\Tools\gd-forkbridge\tests\ForkBridge.Tests\Fixtures\RepoFixture.cs:line 37
+   at ForkBridge.Tests.Fixtures.RepoFixture.BuildBackend() in D:\Repos\Tools\gd-forkbridge\tests\ForkBridge.Tests\Fixtures\RepoFixture.cs:line 135
+   at ForkBridge.Tests.Fixtures.RepoFixture..ctor(Boolean frontend) in D:\Repos\Tools\gd-forkbridge\tests\ForkBridge.Tests\Fixtures\RepoFixture.cs:line 31
+   at ForkBridge.Tests.TransferTests.Backend_ISL_to_QiSL_feature_branch() in D:\Repos\Tools\gd-forkbridge\tests\ForkBridge.Tests\TransferTests.cs:line 14
+--- End of stack trace from previous location ---
+  Failed ForkBridge.Tests.HistoryAndIdempotencyTests.Partial_transfer_then_expanded_component_selection_transfers_the_rest [1 s]
+  Error Message:
+   System.InvalidOperationException : git rm -q -r App.VAM in C:\Users\grego\AppData\Local\Temp\fbtest-9-ffd6edaa\work\ISL-Backend failed: error: the following files have local modifications:
+    App.VAM/Vam/Vam.csproj
+    App.VAM/Vam/Vehicle.cs
+(use --cached to keep the file, or -f to force removal)
+
+  Stack Trace:
+     at ForkBridge.Tests.Fixtures.RepoFixture.GitEnv(String dir, Dictionary`2 env, String[] args) in D:\Repos\Tools\gd-forkbridge\tests\ForkBridge.Tests\Fixtures\RepoFixture.cs:line 53
+   at ForkBridge.Tests.Fixtures.RepoFixture.Git(String dir, String[] args) in D:\Repos\Tools\gd-forkbridge\tests\ForkBridge.Tests\Fixtures\RepoFixture.cs:line 37
+   at ForkBridge.Tests.Fixtures.RepoFixture.BuildBackend() in D:\Repos\Tools\gd-forkbridge\tests\ForkBridge.Tests\Fixtures\RepoFixture.cs:line 135
+   at ForkBridge.Tests.Fixtures.RepoFixture..ctor(Boolean frontend) in D:\Repos\Tools\gd-forkbridge\tests\ForkBridge.Tests\Fixtures\RepoFixture.cs:line 31
+   at ForkBridge.Tests.HistoryAndIdempotencyTests.Partial_transfer_then_expanded_component_selection_transfers_the_rest() in D:\Repos\Tools\gd-forkbridge\tests\ForkBridge.Tests\HistoryAndIdempotencyTests.cs:line 103
+--- End of stack trace from previous location ---
+  Failed ForkBridge.Tests.TransferTests.Unknown_paths_block_and_new_shared_dependency_is_not_silently_excluded [1 s]
+  Error Message:
+   System.InvalidOperationException : git rm -q -r App.VAM in C:\Users\grego\AppData\Local\Temp\fbtest-10-0295b906\work\ISL-Backend failed: error: the following files have local modifications:
+    App.VAM/Vam/Vam.csproj
+    App.VAM/Vam/Vehicle.cs
+(use --cached to keep the file, or -f to force removal)
+
+  Stack Trace:
+     at ForkBridge.Tests.Fixtures.RepoFixture.GitEnv(String dir, Dictionary`2 env, String[] args) in D:\Repos\Tools\gd-forkbridge\tests\ForkBridge.Tests\Fixtures\RepoFixture.cs:line 53
+   at ForkBridge.Tests.Fixtures.RepoFixture.Git(String dir, String[] args) in D:\Repos\Tools\gd-forkbridge\tests\ForkBridge.Tests\Fixtures\RepoFixture.cs:line 37
+   at ForkBridge.Tests.Fixtures.RepoFixture.BuildBackend() in D:\Repos\Tools\gd-forkbridge\tests\ForkBridge.Tests\Fixtures\RepoFixture.cs:line 135
+   at ForkBridge.Tests.Fixtures.RepoFixture..ctor(Boolean frontend) in D:\Repos\Tools\gd-forkbridge\tests\ForkBridge.Tests\Fixtures\RepoFixture.cs:line 31
+   at ForkBridge.Tests.TransferTests.Unknown_paths_block_and_new_shared_dependency_is_not_silently_excluded() in D:\Repos\Tools\gd-forkbridge\tests\ForkBridge.Tests\TransferTests.cs:line 166
+--- End of stack trace from previous location ---
+  Failed ForkBridge.Tests.HistoryAndIdempotencyTests.Remote_fetch_failure_fails_by_default_and_offline_mode_records_staleness [1 s]
+  Error Message:
+   System.InvalidOperationException : git rm -q -r App.VAM in C:\Users\grego\AppData\Local\Temp\fbtest-11-61b78107\work\ISL-Backend failed: error: the following files have local modifications:
+    App.VAM/Vam/Vam.csproj
+    App.VAM/Vam/Vehicle.cs
+(use --cached to keep the file, or -f to force removal)
+
+  Stack Trace:
+     at ForkBridge.Tests.Fixtures.RepoFixture.GitEnv(String dir, Dictionary`2 env, String[] args) in D:\Repos\Tools\gd-forkbridge\tests\ForkBridge.Tests\Fixtures\RepoFixture.cs:line 53
+   at ForkBridge.Tests.Fixtures.RepoFixture.Git(String dir, String[] args) in D:\Repos\Tools\gd-forkbridge\tests\ForkBridge.Tests\Fixtures\RepoFixture.cs:line 37
+   at ForkBridge.Tests.Fixtures.RepoFixture.BuildBackend() in D:\Repos\Tools\gd-forkbridge\tests\ForkBridge.Tests\Fixtures\RepoFixture.cs:line 135
+   at ForkBridge.Tests.Fixtures.RepoFixture..ctor(Boolean frontend) in D:\Repos\Tools\gd-forkbridge\tests\ForkBridge.Tests\Fixtures\RepoFixture.cs:line 31
+   at ForkBridge.Tests.HistoryAndIdempotencyTests.Remote_fetch_failure_fails_by_default_and_offline_mode_records_staleness() in D:\Repos\Tools\gd-forkbridge\tests\ForkBridge.Tests\HistoryAndIdempotencyTests.cs:line 185
+--- End of stack trace from previous location ---
+  Failed ForkBridge.Tests.TransferTests.Target_pinned_config_is_never_overwritten_and_is_reported [1 s]
+  Error Message:
+   System.InvalidOperationException : git rm -q -r App.VAM in C:\Users\grego\AppData\Local\Temp\fbtest-12-c0e55eed\work\ISL-Backend failed: error: the following files have local modifications:
+    App.VAM/Vam/Vam.csproj
+    App.VAM/Vam/Vehicle.cs
+(use --cached to keep the file, or -f to force removal)
+
+  Stack Trace:
+     at ForkBridge.Tests.Fixtures.RepoFixture.GitEnv(String dir, Dictionary`2 env, String[] args) in D:\Repos\Tools\gd-forkbridge\tests\ForkBridge.Tests\Fixtures\RepoFixture.cs:line 53
+   at ForkBridge.Tests.Fixtures.RepoFixture.Git(String dir, String[] args) in D:\Repos\Tools\gd-forkbridge\tests\ForkBridge.Tests\Fixtures\RepoFixture.cs:line 37
+   at ForkBridge.Tests.Fixtures.RepoFixture.BuildBackend() in D:\Repos\Tools\gd-forkbridge\tests\ForkBridge.Tests\Fixtures\RepoFixture.cs:line 135
+   at ForkBridge.Tests.Fixtures.RepoFixture..ctor(Boolean frontend) in D:\Repos\Tools\gd-forkbridge\tests\ForkBridge.Tests\Fixtures\RepoFixture.cs:line 31
+   at ForkBridge.Tests.TransferTests.Target_pinned_config_is_never_overwritten_and_is_reported() in D:\Repos\Tools\gd-forkbridge\tests\ForkBridge.Tests\TransferTests.cs:line 272
+--- End of stack trace from previous location ---
+  Failed ForkBridge.Tests.HistoryAndIdempotencyTests.Repeated_runs_equivalents_reverts_and_edited_equivalents [1 s]
+  Error Message:
+   System.InvalidOperationException : git rm -q -r App.VAM in C:\Users\grego\AppData\Local\Temp\fbtest-13-f76d3375\work\ISL-Backend failed: error: the following files have local modifications:
+    App.VAM/Vam/Vam.csproj
+    App.VAM/Vam/Vehicle.cs
+(use --cached to keep the file, or -f to force removal)
+
+  Stack Trace:
+     at ForkBridge.Tests.Fixtures.RepoFixture.GitEnv(String dir, Dictionary`2 env, String[] args) in D:\Repos\Tools\gd-forkbridge\tests\ForkBridge.Tests\Fixtures\RepoFixture.cs:line 53
+   at ForkBridge.Tests.Fixtures.RepoFixture.Git(String dir, String[] args) in D:\Repos\Tools\gd-forkbridge\tests\ForkBridge.Tests\Fixtures\RepoFixture.cs:line 37
+   at ForkBridge.Tests.Fixtures.RepoFixture.BuildBackend() in D:\Repos\Tools\gd-forkbridge\tests\ForkBridge.Tests\Fixtures\RepoFixture.cs:line 135
+   at ForkBridge.Tests.Fixtures.RepoFixture..ctor(Boolean frontend) in D:\Repos\Tools\gd-forkbridge\tests\ForkBridge.Tests\Fixtures\RepoFixture.cs:line 31
+   at ForkBridge.Tests.HistoryAndIdempotencyTests.Repeated_runs_equivalents_reverts_and_edited_equivalents() in D:\Repos\Tools\gd-forkbridge\tests\ForkBridge.Tests\HistoryAndIdempotencyTests.cs:line 125
+--- End of stack trace from previous location ---
+  Failed ForkBridge.Tests.TransferTests.Frontend_both_directions_with_different_component_paths [1 s]
+  Error Message:
+   System.InvalidOperationException : git rm -q -r App.VAM in C:\Users\grego\AppData\Local\Temp\fbtest-14-ae8adb7e\work\ISL-Backend failed: error: the following files have local modifications:
+    App.VAM/Vam/Vam.csproj
+    App.VAM/Vam/Vehicle.cs
+(use --cached to keep the file, or -f to force removal)
+
+  Stack Trace:
+     at ForkBridge.Tests.Fixtures.RepoFixture.GitEnv(String dir, Dictionary`2 env, String[] args) in D:\Repos\Tools\gd-forkbridge\tests\ForkBridge.Tests\Fixtures\RepoFixture.cs:line 53
+   at ForkBridge.Tests.Fixtures.RepoFixture.Git(String dir, String[] args) in D:\Repos\Tools\gd-forkbridge\tests\ForkBridge.Tests\Fixtures\RepoFixture.cs:line 37
+   at ForkBridge.Tests.Fixtures.RepoFixture.BuildBackend() in D:\Repos\Tools\gd-forkbridge\tests\ForkBridge.Tests\Fixtures\RepoFixture.cs:line 135
+   at ForkBridge.Tests.Fixtures.RepoFixture..ctor(Boolean frontend) in D:\Repos\Tools\gd-forkbridge\tests\ForkBridge.Tests\Fixtures\RepoFixture.cs:line 31
+   at ForkBridge.Tests.TransferTests.Frontend_both_directions_with_different_component_paths() in D:\Repos\Tools\gd-forkbridge\tests\ForkBridge.Tests\TransferTests.cs:line 31
+--- End of stack trace from previous location ---
+  Failed ForkBridge.Tests.HistoryAndIdempotencyTests.Advanced_merge_mode_reports_ancestry_and_resets_excluded_paths [1 s]
+  Error Message:
+   System.InvalidOperationException : git rm -q -r App.VAM in C:\Users\grego\AppData\Local\Temp\fbtest-15-35eb96bd\work\ISL-Backend failed: error: the following files have local modifications:
+    App.VAM/Vam/Vam.csproj
+    App.VAM/Vam/Vehicle.cs
+(use --cached to keep the file, or -f to force removal)
+
+  Stack Trace:
+     at ForkBridge.Tests.Fixtures.RepoFixture.GitEnv(String dir, Dictionary`2 env, String[] args) in D:\Repos\Tools\gd-forkbridge\tests\ForkBridge.Tests\Fixtures\RepoFixture.cs:line 53
+   at ForkBridge.Tests.Fixtures.RepoFixture.Git(String dir, String[] args) in D:\Repos\Tools\gd-forkbridge\tests\ForkBridge.Tests\Fixtures\RepoFixture.cs:line 37
+   at ForkBridge.Tests.Fixtures.RepoFixture.BuildBackend() in D:\Repos\Tools\gd-forkbridge\tests\ForkBridge.Tests\Fixtures\RepoFixture.cs:line 135
+   at ForkBridge.Tests.Fixtures.RepoFixture..ctor(Boolean frontend) in D:\Repos\Tools\gd-forkbridge\tests\ForkBridge.Tests\Fixtures\RepoFixture.cs:line 31
+   at ForkBridge.Tests.HistoryAndIdempotencyTests.Advanced_merge_mode_reports_ancestry_and_resets_excluded_paths() in D:\Repos\Tools\gd-forkbridge\tests\ForkBridge.Tests\HistoryAndIdempotencyTests.cs:line 200
+--- End of stack trace from previous location ---
+  Failed ForkBridge.Tests.TransferTests.Binary_non_ascii_and_crlf_content_is_byte_exact [1 s]
+  Error Message:
+   System.InvalidOperationException : git rm -q -r App.VAM in C:\Users\grego\AppData\Local\Temp\fbtest-16-429f454e\work\ISL-Backend failed: error: the following files have local modifications:
+    App.VAM/Vam/Vam.csproj
+    App.VAM/Vam/Vehicle.cs
+(use --cached to keep the file, or -f to force removal)
+
+  Stack Trace:
+     at ForkBridge.Tests.Fixtures.RepoFixture.GitEnv(String dir, Dictionary`2 env, String[] args) in D:\Repos\Tools\gd-forkbridge\tests\ForkBridge.Tests\Fixtures\RepoFixture.cs:line 53
+   at ForkBridge.Tests.Fixtures.RepoFixture.Git(String dir, String[] args) in D:\Repos\Tools\gd-forkbridge\tests\ForkBridge.Tests\Fixtures\RepoFixture.cs:line 37
+   at ForkBridge.Tests.Fixtures.RepoFixture.BuildBackend() in D:\Repos\Tools\gd-forkbridge\tests\ForkBridge.Tests\Fixtures\RepoFixture.cs:line 135
+   at ForkBridge.Tests.Fixtures.RepoFixture..ctor(Boolean frontend) in D:\Repos\Tools\gd-forkbridge\tests\ForkBridge.Tests\Fixtures\RepoFixture.cs:line 31
+   at ForkBridge.Tests.TransferTests.Binary_non_ascii_and_crlf_content_is_byte_exact() in D:\Repos\Tools\gd-forkbridge\tests\ForkBridge.Tests\TransferTests.cs:line 235
+--- End of stack trace from previous location ---
+  Failed ForkBridge.Tests.HistoryAndIdempotencyTests.Explicit_range_and_ordered_commit_list_are_distinct_selections [1 s]
+  Error Message:
+   System.InvalidOperationException : git rm -q -r App.VAM in C:\Users\grego\AppData\Local\Temp\fbtest-17-9c2ce421\work\ISL-Backend failed: error: the following files have local modifications:
+    App.VAM/Vam/Vam.csproj
+    App.VAM/Vam/Vehicle.cs
+(use --cached to keep the file, or -f to force removal)
+
+  Stack Trace:
+     at ForkBridge.Tests.Fixtures.RepoFixture.GitEnv(String dir, Dictionary`2 env, String[] args) in D:\Repos\Tools\gd-forkbridge\tests\ForkBridge.Tests\Fixtures\RepoFixture.cs:line 53
+   at ForkBridge.Tests.Fixtures.RepoFixture.Git(String dir, String[] args) in D:\Repos\Tools\gd-forkbridge\tests\ForkBridge.Tests\Fixtures\RepoFixture.cs:line 37
+   at ForkBridge.Tests.Fixtures.RepoFixture.BuildBackend() in D:\Repos\Tools\gd-forkbridge\tests\ForkBridge.Tests\Fixtures\RepoFixture.cs:line 135
+   at ForkBridge.Tests.Fixtures.RepoFixture..ctor(Boolean frontend) in D:\Repos\Tools\gd-forkbridge\tests\ForkBridge.Tests\Fixtures\RepoFixture.cs:line 31
+   at ForkBridge.Tests.HistoryAndIdempotencyTests.Explicit_range_and_ordered_commit_list_are_distinct_selections() in D:\Repos\Tools\gd-forkbridge\tests\ForkBridge.Tests\HistoryAndIdempotencyTests.cs:line 32
+--- End of stack trace from previous location ---
+  Failed ForkBridge.Tests.TransferTests.Abort_removes_workspace_and_branch_but_keeps_reports [1 s]
+  Error Message:
+   System.InvalidOperationException : git rm -q -r App.VAM in C:\Users\grego\AppData\Local\Temp\fbtest-18-c1c27dc5\work\ISL-Backend failed: error: the following files have local modifications:
+    App.VAM/Vam/Vam.csproj
+    App.VAM/Vam/Vehicle.cs
+(use --cached to keep the file, or -f to force removal)
+
+  Stack Trace:
+     at ForkBridge.Tests.Fixtures.RepoFixture.GitEnv(String dir, Dictionary`2 env, String[] args) in D:\Repos\Tools\gd-forkbridge\tests\ForkBridge.Tests\Fixtures\RepoFixture.cs:line 53
+   at ForkBridge.Tests.Fixtures.RepoFixture.Git(String dir, String[] args) in D:\Repos\Tools\gd-forkbridge\tests\ForkBridge.Tests\Fixtures\RepoFixture.cs:line 37
+   at ForkBridge.Tests.Fixtures.RepoFixture.BuildBackend() in D:\Repos\Tools\gd-forkbridge\tests\ForkBridge.Tests\Fixtures\RepoFixture.cs:line 135
+   at ForkBridge.Tests.Fixtures.RepoFixture..ctor(Boolean frontend) in D:\Repos\Tools\gd-forkbridge\tests\ForkBridge.Tests\Fixtures\RepoFixture.cs:line 31
+   at ForkBridge.Tests.TransferTests.Abort_removes_workspace_and_branch_but_keeps_reports() in D:\Repos\Tools\gd-forkbridge\tests\ForkBridge.Tests\TransferTests.cs:line 92
+--- End of stack trace from previous location ---
+  Failed ForkBridge.Tests.HistoryAndIdempotencyTests.Target_base_movement_after_planning_invalidates_the_plan [1 s]
+  Error Message:
+   System.InvalidOperationException : git rm -q -r App.VAM in C:\Users\grego\AppData\Local\Temp\fbtest-19-14b6e271\work\ISL-Backend failed: error: the following files have local modifications:
+    App.VAM/Vam/Vam.csproj
+    App.VAM/Vam/Vehicle.cs
+(use --cached to keep the file, or -f to force removal)
+
+  Stack Trace:
+     at ForkBridge.Tests.Fixtures.RepoFixture.GitEnv(String dir, Dictionary`2 env, String[] args) in D:\Repos\Tools\gd-forkbridge\tests\ForkBridge.Tests\Fixtures\RepoFixture.cs:line 53
+   at ForkBridge.Tests.Fixtures.RepoFixture.Git(String dir, String[] args) in D:\Repos\Tools\gd-forkbridge\tests\ForkBridge.Tests\Fixtures\RepoFixture.cs:line 37
+   at ForkBridge.Tests.Fixtures.RepoFixture.BuildBackend() in D:\Repos\Tools\gd-forkbridge\tests\ForkBridge.Tests\Fixtures\RepoFixture.cs:line 135
+   at ForkBridge.Tests.Fixtures.RepoFixture..ctor(Boolean frontend) in D:\Repos\Tools\gd-forkbridge\tests\ForkBridge.Tests\Fixtures\RepoFixture.cs:line 31
+   at ForkBridge.Tests.HistoryAndIdempotencyTests.Target_base_movement_after_planning_invalidates_the_plan() in D:\Repos\Tools\gd-forkbridge\tests\ForkBridge.Tests\HistoryAndIdempotencyTests.cs:line 162
+--- End of stack trace from previous location ---
+  Failed ForkBridge.Tests.TransferTests.Generated_files_block_by_default [1 s]
+  Error Message:
+   System.InvalidOperationException : git rm -q -r App.VAM in C:\Users\grego\AppData\Local\Temp\fbtest-20-045b6879\work\ISL-Backend failed: error: the following files have local modifications:
+    App.VAM/Vam/Vam.csproj
+    App.VAM/Vam/Vehicle.cs
+(use --cached to keep the file, or -f to force removal)
+
+  Stack Trace:
+     at ForkBridge.Tests.Fixtures.RepoFixture.GitEnv(String dir, Dictionary`2 env, String[] args) in D:\Repos\Tools\gd-forkbridge\tests\ForkBridge.Tests\Fixtures\RepoFixture.cs:line 53
+   at ForkBridge.Tests.Fixtures.RepoFixture.Git(String dir, String[] args) in D:\Repos\Tools\gd-forkbridge\tests\ForkBridge.Tests\Fixtures\RepoFixture.cs:line 37
+   at ForkBridge.Tests.Fixtures.RepoFixture.BuildBackend() in D:\Repos\Tools\gd-forkbridge\tests\ForkBridge.Tests\Fixtures\RepoFixture.cs:line 135
+   at ForkBridge.Tests.Fixtures.RepoFixture..ctor(Boolean frontend) in D:\Repos\Tools\gd-forkbridge\tests\ForkBridge.Tests\Fixtures\RepoFixture.cs:line 31
+   at ForkBridge.Tests.TransferTests.Generated_files_block_by_default() in D:\Repos\Tools\gd-forkbridge\tests\ForkBridge.Tests\TransferTests.cs:line 257
+--- End of stack trace from previous location ---
+  Failed ForkBridge.Tests.HistoryAndIdempotencyTests.Filtered_merge_ancestry_hiding_missing_shared_content_is_detected_and_reconcile_repairs_it [1 s]
+  Error Message:
+   System.InvalidOperationException : git rm -q -r App.VAM in C:\Users\grego\AppData\Local\Temp\fbtest-21-daba9dfe\work\ISL-Backend failed: error: the following files have local modifications:
+    App.VAM/Vam/Vam.csproj
+    App.VAM/Vam/Vehicle.cs
+(use --cached to keep the file, or -f to force removal)
+
+  Stack Trace:
+     at ForkBridge.Tests.Fixtures.RepoFixture.GitEnv(String dir, Dictionary`2 env, String[] args) in D:\Repos\Tools\gd-forkbridge\tests\ForkBridge.Tests\Fixtures\RepoFixture.cs:line 53
+   at ForkBridge.Tests.Fixtures.RepoFixture.Git(String dir, String[] args) in D:\Repos\Tools\gd-forkbridge\tests\ForkBridge.Tests\Fixtures\RepoFixture.cs:line 37
+   at ForkBridge.Tests.Fixtures.RepoFixture.BuildBackend() in D:\Repos\Tools\gd-forkbridge\tests\ForkBridge.Tests\Fixtures\RepoFixture.cs:line 135
+   at ForkBridge.Tests.Fixtures.RepoFixture..ctor(Boolean frontend) in D:\Repos\Tools\gd-forkbridge\tests\ForkBridge.Tests\Fixtures\RepoFixture.cs:line 31
+   at ForkBridge.Tests.HistoryAndIdempotencyTests.Filtered_merge_ancestry_hiding_missing_shared_content_is_detected_and_reconcile_repairs_it() in D:\Repos\Tools\gd-forkbridge\tests\ForkBridge.Tests\HistoryAndIdempotencyTests.cs:line 68
+--- End of stack trace from previous location ---
+  Failed ForkBridge.Tests.TransferTests.Deletion_and_rename_inside_component_transfer_with_mapping [1 s]
+  Error Message:
+   System.InvalidOperationException : git rm -q -r App.VAM in C:\Users\grego\AppData\Local\Temp\fbtest-22-2e0ad9d8\work\ISL-Backend failed: error: the following files have local modifications:
+    App.VAM/Vam/Vam.csproj
+    App.VAM/Vam/Vehicle.cs
+(use --cached to keep the file, or -f to force removal)
+
+  Stack Trace:
+     at ForkBridge.Tests.Fixtures.RepoFixture.GitEnv(String dir, Dictionary`2 env, String[] args) in D:\Repos\Tools\gd-forkbridge\tests\ForkBridge.Tests\Fixtures\RepoFixture.cs:line 53
+   at ForkBridge.Tests.Fixtures.RepoFixture.Git(String dir, String[] args) in D:\Repos\Tools\gd-forkbridge\tests\ForkBridge.Tests\Fixtures\RepoFixture.cs:line 37
+   at ForkBridge.Tests.Fixtures.RepoFixture.BuildBackend() in D:\Repos\Tools\gd-forkbridge\tests\ForkBridge.Tests\Fixtures\RepoFixture.cs:line 135
+   at ForkBridge.Tests.Fixtures.RepoFixture..ctor(Boolean frontend) in D:\Repos\Tools\gd-forkbridge\tests\ForkBridge.Tests\Fixtures\RepoFixture.cs:line 31
+   at ForkBridge.Tests.TransferTests.Deletion_and_rename_inside_component_transfer_with_mapping() in D:\Repos\Tools\gd-forkbridge\tests\ForkBridge.Tests\TransferTests.cs:line 199
+--- End of stack trace from previous location ---
+  Failed ForkBridge.Tests.TransferTests.Nested_product_specific_path_under_shared_component_is_excluded [1 s]
+  Error Message:
+   System.InvalidOperationException : git rm -q -r App.VAM in C:\Users\grego\AppData\Local\Temp\fbtest-23-d291d1e0\work\ISL-Backend failed: error: the following files have local modifications:
+    App.VAM/Vam/Vam.csproj
+    App.VAM/Vam/Vehicle.cs
+(use --cached to keep the file, or -f to force removal)
+
+  Stack Trace:
+     at ForkBridge.Tests.Fixtures.RepoFixture.GitEnv(String dir, Dictionary`2 env, String[] args) in D:\Repos\Tools\gd-forkbridge\tests\ForkBridge.Tests\Fixtures\RepoFixture.cs:line 53
+   at ForkBridge.Tests.Fixtures.RepoFixture.Git(String dir, String[] args) in D:\Repos\Tools\gd-forkbridge\tests\ForkBridge.Tests\Fixtures\RepoFixture.cs:line 37
+   at ForkBridge.Tests.Fixtures.RepoFixture.BuildBackend() in D:\Repos\Tools\gd-forkbridge\tests\ForkBridge.Tests\Fixtures\RepoFixture.cs:line 135
+   at ForkBridge.Tests.Fixtures.RepoFixture..ctor(Boolean frontend) in D:\Repos\Tools\gd-forkbridge\tests\ForkBridge.Tests\Fixtures\RepoFixture.cs:line 31
+   at ForkBridge.Tests.TransferTests.Nested_product_specific_path_under_shared_component_is_excluded() in D:\Repos\Tools\gd-forkbridge\tests\ForkBridge.Tests\TransferTests.cs:line 150
+--- End of stack trace from previous location ---
+  Failed ForkBridge.Tests.TransferTests.Conflicting_edit_blocks_with_evidence_then_resume_after_manual_resolution [1 s]
+  Error Message:
+   System.InvalidOperationException : git rm -q -r App.VAM in C:\Users\grego\AppData\Local\Temp\fbtest-24-b35e80ad\work\ISL-Backend failed: error: the following files have local modifications:
+    App.VAM/Vam/Vam.csproj
+    App.VAM/Vam/Vehicle.cs
+(use --cached to keep the file, or -f to force removal)
+
+  Stack Trace:
+     at ForkBridge.Tests.Fixtures.RepoFixture.GitEnv(String dir, Dictionary`2 env, String[] args) in D:\Repos\Tools\gd-forkbridge\tests\ForkBridge.Tests\Fixtures\RepoFixture.cs:line 53
+   at ForkBridge.Tests.Fixtures.RepoFixture.Git(String dir, String[] args) in D:\Repos\Tools\gd-forkbridge\tests\ForkBridge.Tests\Fixtures\RepoFixture.cs:line 37
+   at ForkBridge.Tests.Fixtures.RepoFixture.BuildBackend() in D:\Repos\Tools\gd-forkbridge\tests\ForkBridge.Tests\Fixtures\RepoFixture.cs:line 135
+   at ForkBridge.Tests.Fixtures.RepoFixture..ctor(Boolean frontend) in D:\Repos\Tools\gd-forkbridge\tests\ForkBridge.Tests\Fixtures\RepoFixture.cs:line 31
+   at ForkBridge.Tests.TransferTests.Conflicting_edit_blocks_with_evidence_then_resume_after_manual_resolution() in D:\Repos\Tools\gd-forkbridge\tests\ForkBridge.Tests\TransferTests.cs:line 57
+--- End of stack trace from previous location ---
+  Failed ForkBridge.Tests.TransferTests.Rename_across_policy_boundary_reports_both_ends_and_blocks [1 s]
+  Error Message:
+   System.InvalidOperationException : git rm -q -r App.VAM in C:\Users\grego\AppData\Local\Temp\fbtest-25-c8acd603\work\ISL-Backend failed: error: the following files have local modifications:
+    App.VAM/Vam/Vam.csproj
+    App.VAM/Vam/Vehicle.cs
+(use --cached to keep the file, or -f to force removal)
+
+  Stack Trace:
+     at ForkBridge.Tests.Fixtures.RepoFixture.GitEnv(String dir, Dictionary`2 env, String[] args) in D:\Repos\Tools\gd-forkbridge\tests\ForkBridge.Tests\Fixtures\RepoFixture.cs:line 53
+   at ForkBridge.Tests.Fixtures.RepoFixture.Git(String dir, String[] args) in D:\Repos\Tools\gd-forkbridge\tests\ForkBridge.Tests\Fixtures\RepoFixture.cs:line 37
+   at ForkBridge.Tests.Fixtures.RepoFixture.BuildBackend() in D:\Repos\Tools\gd-forkbridge\tests\ForkBridge.Tests\Fixtures\RepoFixture.cs:line 135
+   at ForkBridge.Tests.Fixtures.RepoFixture..ctor(Boolean frontend) in D:\Repos\Tools\gd-forkbridge\tests\ForkBridge.Tests\Fixtures\RepoFixture.cs:line 31
+   at ForkBridge.Tests.TransferTests.Rename_across_policy_boundary_reports_both_ends_and_blocks() in D:\Repos\Tools\gd-forkbridge\tests\ForkBridge.Tests\TransferTests.cs:line 219
+--- End of stack trace from previous location ---
+  Failed ForkBridge.Tests.ValidationAndSafetyTests.Dirty_developer_checkouts_with_in_progress_operations_stay_byte_identical [1 s]
+  Error Message:
+   System.InvalidOperationException : git rm -q -r App.VAM in C:\Users\grego\AppData\Local\Temp\fbtest-26-c92cc4f6\work\ISL-Backend failed: error: the following files have local modifications:
+    App.VAM/Vam/Vam.csproj
+    App.VAM/Vam/Vehicle.cs
+(use --cached to keep the file, or -f to force removal)
+
+  Stack Trace:
+     at ForkBridge.Tests.Fixtures.RepoFixture.GitEnv(String dir, Dictionary`2 env, String[] args) in D:\Repos\Tools\gd-forkbridge\tests\ForkBridge.Tests\Fixtures\RepoFixture.cs:line 53
+   at ForkBridge.Tests.Fixtures.RepoFixture.Git(String dir, String[] args) in D:\Repos\Tools\gd-forkbridge\tests\ForkBridge.Tests\Fixtures\RepoFixture.cs:line 37
+   at ForkBridge.Tests.Fixtures.RepoFixture.BuildBackend() in D:\Repos\Tools\gd-forkbridge\tests\ForkBridge.Tests\Fixtures\RepoFixture.cs:line 135
+   at ForkBridge.Tests.Fixtures.RepoFixture..ctor(Boolean frontend) in D:\Repos\Tools\gd-forkbridge\tests\ForkBridge.Tests\Fixtures\RepoFixture.cs:line 31
+   at ForkBridge.Tests.ValidationAndSafetyTests.Dirty_developer_checkouts_with_in_progress_operations_stay_byte_identical() in D:\Repos\Tools\gd-forkbridge\tests\ForkBridge.Tests\ValidationAndSafetyTests.cs:line 122
+--- End of stack trace from previous location ---
+  Failed ForkBridge.Tests.ValidationAndSafetyTests.Credentials_are_scrubbed_from_validation_environment [1 s]
+  Error Message:
+   System.InvalidOperationException : git rm -q -r App.VAM in C:\Users\grego\AppData\Local\Temp\fbtest-27-4db1cd1b\work\ISL-Backend failed: error: the following files have local modifications:
+    App.VAM/Vam/Vam.csproj
+    App.VAM/Vam/Vehicle.cs
+(use --cached to keep the file, or -f to force removal)
+
+  Stack Trace:
+     at ForkBridge.Tests.Fixtures.RepoFixture.GitEnv(String dir, Dictionary`2 env, String[] args) in D:\Repos\Tools\gd-forkbridge\tests\ForkBridge.Tests\Fixtures\RepoFixture.cs:line 53
+   at ForkBridge.Tests.Fixtures.RepoFixture.Git(String dir, String[] args) in D:\Repos\Tools\gd-forkbridge\tests\ForkBridge.Tests\Fixtures\RepoFixture.cs:line 37
+   at ForkBridge.Tests.Fixtures.RepoFixture.BuildBackend() in D:\Repos\Tools\gd-forkbridge\tests\ForkBridge.Tests\Fixtures\RepoFixture.cs:line 135
+   at ForkBridge.Tests.Fixtures.RepoFixture..ctor(Boolean frontend) in D:\Repos\Tools\gd-forkbridge\tests\ForkBridge.Tests\Fixtures\RepoFixture.cs:line 31
+   at ForkBridge.Tests.ValidationAndSafetyTests.Credentials_are_scrubbed_from_validation_environment() in D:\Repos\Tools\gd-forkbridge\tests\ForkBridge.Tests\ValidationAndSafetyTests.cs:line 61
+--- End of stack trace from previous location ---
+  Failed ForkBridge.Tests.ValidationAndSafetyTests.Cancellation_is_recorded_and_the_run_can_be_resumed [1 s]
+  Error Message:
+   System.InvalidOperationException : git rm -q -r App.VAM in C:\Users\grego\AppData\Local\Temp\fbtest-28-a883374f\work\ISL-Backend failed: error: the following files have local modifications:
+    App.VAM/Vam/Vam.csproj
+    App.VAM/Vam/Vehicle.cs
+(use --cached to keep the file, or -f to force removal)
+
+  Stack Trace:
+     at ForkBridge.Tests.Fixtures.RepoFixture.GitEnv(String dir, Dictionary`2 env, String[] args) in D:\Repos\Tools\gd-forkbridge\tests\ForkBridge.Tests\Fixtures\RepoFixture.cs:line 53
+   at ForkBridge.Tests.Fixtures.RepoFixture.Git(String dir, String[] args) in D:\Repos\Tools\gd-forkbridge\tests\ForkBridge.Tests\Fixtures\RepoFixture.cs:line 37
+   at ForkBridge.Tests.Fixtures.RepoFixture.BuildBackend() in D:\Repos\Tools\gd-forkbridge\tests\ForkBridge.Tests\Fixtures\RepoFixture.cs:line 135
+   at ForkBridge.Tests.Fixtures.RepoFixture..ctor(Boolean frontend) in D:\Repos\Tools\gd-forkbridge\tests\ForkBridge.Tests\Fixtures\RepoFixture.cs:line 31
+   at ForkBridge.Tests.ValidationAndSafetyTests.Cancellation_is_recorded_and_the_run_can_be_resumed() in D:\Repos\Tools\gd-forkbridge\tests\ForkBridge.Tests\ValidationAndSafetyTests.cs:line 80
+--- End of stack trace from previous location ---
+  Failed ForkBridge.Tests.ValidationAndSafetyTests.Validation_script_modifying_a_user_checkout_is_detected_and_blocks [1 s]
+  Error Message:
+   System.InvalidOperationException : git rm -q -r App.VAM in C:\Users\grego\AppData\Local\Temp\fbtest-29-103b670d\work\ISL-Backend failed: error: the following files have local modifications:
+    App.VAM/Vam/Vam.csproj
+    App.VAM/Vam/Vehicle.cs
+(use --cached to keep the file, or -f to force removal)
+
+  Stack Trace:
+     at ForkBridge.Tests.Fixtures.RepoFixture.GitEnv(String dir, Dictionary`2 env, String[] args) in D:\Repos\Tools\gd-forkbridge\tests\ForkBridge.Tests\Fixtures\RepoFixture.cs:line 53
+   at ForkBridge.Tests.Fixtures.RepoFixture.Git(String dir, String[] args) in D:\Repos\Tools\gd-forkbridge\tests\ForkBridge.Tests\Fixtures\RepoFixture.cs:line 37
+   at ForkBridge.Tests.Fixtures.RepoFixture.BuildBackend() in D:\Repos\Tools\gd-forkbridge\tests\ForkBridge.Tests\Fixtures\RepoFixture.cs:line 135
+   at ForkBridge.Tests.Fixtures.RepoFixture..ctor(Boolean frontend) in D:\Repos\Tools\gd-forkbridge\tests\ForkBridge.Tests\Fixtures\RepoFixture.cs:line 31
+   at ForkBridge.Tests.ValidationAndSafetyTests.Validation_script_modifying_a_user_checkout_is_detected_and_blocks() in D:\Repos\Tools\gd-forkbridge\tests\ForkBridge.Tests\ValidationAndSafetyTests.cs:line 155
+--- End of stack trace from previous location ---
+  Failed ForkBridge.Tests.ValidationAndSafetyTests.Cleanup_requires_ownership_marker [1 s]
+  Error Message:
+   System.InvalidOperationException : git rm -q -r App.VAM in C:\Users\grego\AppData\Local\Temp\fbtest-30-1c84a8ac\work\ISL-Backend failed: error: the following files have local modifications:
+    App.VAM/Vam/Vam.csproj
+    App.VAM/Vam/Vehicle.cs
+(use --cached to keep the file, or -f to force removal)
+
+  Stack Trace:
+     at ForkBridge.Tests.Fixtures.RepoFixture.GitEnv(String dir, Dictionary`2 env, String[] args) in D:\Repos\Tools\gd-forkbridge\tests\ForkBridge.Tests\Fixtures\RepoFixture.cs:line 53
+   at ForkBridge.Tests.Fixtures.RepoFixture.Git(String dir, String[] args) in D:\Repos\Tools\gd-forkbridge\tests\ForkBridge.Tests\Fixtures\RepoFixture.cs:line 37
+   at ForkBridge.Tests.Fixtures.RepoFixture.BuildBackend() in D:\Repos\Tools\gd-forkbridge\tests\ForkBridge.Tests\Fixtures\RepoFixture.cs:line 135
+   at ForkBridge.Tests.Fixtures.RepoFixture..ctor(Boolean frontend) in D:\Repos\Tools\gd-forkbridge\tests\ForkBridge.Tests\Fixtures\RepoFixture.cs:line 31
+   at ForkBridge.Tests.ValidationAndSafetyTests.Cleanup_requires_ownership_marker() in D:\Repos\Tools\gd-forkbridge\tests\ForkBridge.Tests\ValidationAndSafetyTests.cs:line 191
+--- End of stack trace from previous location ---
+  Failed ForkBridge.Tests.ValidationAndSafetyTests.Untrusted_or_unavailable_checks_are_never_a_pass [1 s]
+  Error Message:
+   System.InvalidOperationException : git rm -q -r App.VAM in C:\Users\grego\AppData\Local\Temp\fbtest-31-3af7e6b4\work\ISL-Backend failed: error: the following files have local modifications:
+    App.VAM/Vam/Vam.csproj
+    App.VAM/Vam/Vehicle.cs
+(use --cached to keep the file, or -f to force removal)
+
+  Stack Trace:
+     at ForkBridge.Tests.Fixtures.RepoFixture.GitEnv(String dir, Dictionary`2 env, String[] args) in D:\Repos\Tools\gd-forkbridge\tests\ForkBridge.Tests\Fixtures\RepoFixture.cs:line 53
+   at ForkBridge.Tests.Fixtures.RepoFixture.Git(String dir, String[] args) in D:\Repos\Tools\gd-forkbridge\tests\ForkBridge.Tests\Fixtures\RepoFixture.cs:line 37
+   at ForkBridge.Tests.Fixtures.RepoFixture.BuildBackend() in D:\Repos\Tools\gd-forkbridge\tests\ForkBridge.Tests\Fixtures\RepoFixture.cs:line 135
+   at ForkBridge.Tests.Fixtures.RepoFixture..ctor(Boolean frontend) in D:\Repos\Tools\gd-forkbridge\tests\ForkBridge.Tests\Fixtures\RepoFixture.cs:line 31
+   at ForkBridge.Tests.ValidationAndSafetyTests.Untrusted_or_unavailable_checks_are_never_a_pass() in D:\Repos\Tools\gd-forkbridge\tests\ForkBridge.Tests\ValidationAndSafetyTests.cs:line 39
+--- End of stack trace from previous location ---
+  Failed ForkBridge.Tests.ValidationAndSafetyTests.Crash_recovery_resets_the_harness_workspace_to_the_last_recorded_commit [1 s]
+  Error Message:
+   System.InvalidOperationException : git rm -q -r App.VAM in C:\Users\grego\AppData\Local\Temp\fbtest-32-60d43e64\work\ISL-Backend failed: error: the following files have local modifications:
+    App.VAM/Vam/Vam.csproj
+    App.VAM/Vam/Vehicle.cs
+(use --cached to keep the file, or -f to force removal)
+
+  Stack Trace:
+     at ForkBridge.Tests.Fixtures.RepoFixture.GitEnv(String dir, Dictionary`2 env, String[] args) in D:\Repos\Tools\gd-forkbridge\tests\ForkBridge.Tests\Fixtures\RepoFixture.cs:line 53
+   at ForkBridge.Tests.Fixtures.RepoFixture.Git(String dir, String[] args) in D:\Repos\Tools\gd-forkbridge\tests\ForkBridge.Tests\Fixtures\RepoFixture.cs:line 37
+   at ForkBridge.Tests.Fixtures.RepoFixture.BuildBackend() in D:\Repos\Tools\gd-forkbridge\tests\ForkBridge.Tests\Fixtures\RepoFixture.cs:line 135
+   at ForkBridge.Tests.Fixtures.RepoFixture..ctor(Boolean frontend) in D:\Repos\Tools\gd-forkbridge\tests\ForkBridge.Tests\Fixtures\RepoFixture.cs:line 31
+   at ForkBridge.Tests.ValidationAndSafetyTests.Crash_recovery_resets_the_harness_workspace_to_the_last_recorded_commit() in D:\Repos\Tools\gd-forkbridge\tests\ForkBridge.Tests\ValidationAndSafetyTests.cs:line 98
+--- End of stack trace from previous location ---
+  Failed ForkBridge.Tests.ValidationAndSafetyTests.New_failure_vs_baseline_failure_are_distinguished_and_neither_is_ready [1 s]
+  Error Message:
+   System.InvalidOperationException : git rm -q -r App.VAM in C:\Users\grego\AppData\Local\Temp\fbtest-33-c01c2f23\work\ISL-Backend failed: error: the following files have local modifications:
+    App.VAM/Vam/Vam.csproj
+    App.VAM/Vam/Vehicle.cs
+(use --cached to keep the file, or -f to force removal)
+
+  Stack Trace:
+     at ForkBridge.Tests.Fixtures.RepoFixture.GitEnv(String dir, Dictionary`2 env, String[] args) in D:\Repos\Tools\gd-forkbridge\tests\ForkBridge.Tests\Fixtures\RepoFixture.cs:line 53
+   at ForkBridge.Tests.Fixtures.RepoFixture.Git(String dir, String[] args) in D:\Repos\Tools\gd-forkbridge\tests\ForkBridge.Tests\Fixtures\RepoFixture.cs:line 37
+   at ForkBridge.Tests.Fixtures.RepoFixture.BuildBackend() in D:\Repos\Tools\gd-forkbridge\tests\ForkBridge.Tests\Fixtures\RepoFixture.cs:line 135
+   at ForkBridge.Tests.Fixtures.RepoFixture..ctor(Boolean frontend) in D:\Repos\Tools\gd-forkbridge\tests\ForkBridge.Tests\Fixtures\RepoFixture.cs:line 31
+   at ForkBridge.Tests.ValidationAndSafetyTests.New_failure_vs_baseline_failure_are_distinguished_and_neither_is_ready() in D:\Repos\Tools\gd-forkbridge\tests\ForkBridge.Tests\ValidationAndSafetyTests.cs:line 18
+--- End of stack trace from previous location ---
+  Failed ForkBridge.Tests.ValidationAndSafetyTests.Cleanup_never_follows_symlinks_planted_in_a_workspace [1 s]
+  Error Message:
+   System.InvalidOperationException : git rm -q -r App.VAM in C:\Users\grego\AppData\Local\Temp\fbtest-34-c22e3597\work\ISL-Backend failed: error: the following files have local modifications:
+    App.VAM/Vam/Vam.csproj
+    App.VAM/Vam/Vehicle.cs
+(use --cached to keep the file, or -f to force removal)
+
+  Stack Trace:
+     at ForkBridge.Tests.Fixtures.RepoFixture.GitEnv(String dir, Dictionary`2 env, String[] args) in D:\Repos\Tools\gd-forkbridge\tests\ForkBridge.Tests\Fixtures\RepoFixture.cs:line 53
+   at ForkBridge.Tests.Fixtures.RepoFixture.Git(String dir, String[] args) in D:\Repos\Tools\gd-forkbridge\tests\ForkBridge.Tests\Fixtures\RepoFixture.cs:line 37
+   at ForkBridge.Tests.Fixtures.RepoFixture.BuildBackend() in D:\Repos\Tools\gd-forkbridge\tests\ForkBridge.Tests\Fixtures\RepoFixture.cs:line 135
+   at ForkBridge.Tests.Fixtures.RepoFixture..ctor(Boolean frontend) in D:\Repos\Tools\gd-forkbridge\tests\ForkBridge.Tests\Fixtures\RepoFixture.cs:line 31
+   at ForkBridge.Tests.ValidationAndSafetyTests.Cleanup_never_follows_symlinks_planted_in_a_workspace() in D:\Repos\Tools\gd-forkbridge\tests\ForkBridge.Tests\ValidationAndSafetyTests.cs:line 170
+--- End of stack trace from previous location ---
+  Failed ForkBridge.Tests.PublishCliBundleTests.Coordinated_bundle_records_sha_matrix_and_publishes_per_repository [1 s]
+  Error Message:
+   System.InvalidOperationException : git rm -q -r App.VAM in C:\Users\grego\AppData\Local\Temp\fbtest-36-17e7bb47\work\ISL-Backend failed: error: the following files have local modifications:
+    App.VAM/Vam/Vam.csproj
+    App.VAM/Vam/Vehicle.cs
+(use --cached to keep the file, or -f to force removal)
+
+  Stack Trace:
+     at ForkBridge.Tests.Fixtures.RepoFixture.GitEnv(String dir, Dictionary`2 env, String[] args) in D:\Repos\Tools\gd-forkbridge\tests\ForkBridge.Tests\Fixtures\RepoFixture.cs:line 53
+   at ForkBridge.Tests.Fixtures.RepoFixture.Git(String dir, String[] args) in D:\Repos\Tools\gd-forkbridge\tests\ForkBridge.Tests\Fixtures\RepoFixture.cs:line 37
+   at ForkBridge.Tests.Fixtures.RepoFixture.BuildBackend() in D:\Repos\Tools\gd-forkbridge\tests\ForkBridge.Tests\Fixtures\RepoFixture.cs:line 135
+   at ForkBridge.Tests.Fixtures.RepoFixture..ctor(Boolean frontend) in D:\Repos\Tools\gd-forkbridge\tests\ForkBridge.Tests\Fixtures\RepoFixture.cs:line 31
+   at ForkBridge.Tests.PublishCliBundleTests.Coordinated_bundle_records_sha_matrix_and_publishes_per_repository() in D:\Repos\Tools\gd-forkbridge\tests\ForkBridge.Tests\PublishCliBundleTests.cs:line 114
+--- End of stack trace from previous location ---
+  Failed ForkBridge.Tests.PublishCliBundleTests.Azure_DevOps_adapter_uses_the_credential_helper_and_never_persists_the_secret [528 ms]
+  Error Message:
+   Assert.Equal() Failure: Strings differ
+           ↓ (pos 0)
+Expected: "cGF0OnMzY3IzdC1wYXQtdmFsdWUtMTIzNDU2Nzg5M"···
+Actual:   "Z3JlZ29yeS5taWZzdWRAaXNsLmNvbS5tdDpCc2F0Q"···
+           ↑ (pos 0)
+  Stack Trace:
+     at ForkBridge.Tests.PublishCliBundleTests.Azure_DevOps_adapter_uses_the_credential_helper_and_never_persists_the_secret() in D:\Repos\Tools\gd-forkbridge\tests\ForkBridge.Tests\PublishCliBundleTests.cs:line 190
+--- End of stack trace from previous location ---
+  Failed ForkBridge.Tests.PublishCliBundleTests.Publish_refuses_protected_branches_and_moved_target_base [1 s]
+  Error Message:
+   System.InvalidOperationException : git rm -q -r App.VAM in C:\Users\grego\AppData\Local\Temp\fbtest-37-e5feef7e\work\ISL-Backend failed: error: the following files have local modifications:
+    App.VAM/Vam/Vam.csproj
+    App.VAM/Vam/Vehicle.cs
+(use --cached to keep the file, or -f to force removal)
+
+  Stack Trace:
+     at ForkBridge.Tests.Fixtures.RepoFixture.GitEnv(String dir, Dictionary`2 env, String[] args) in D:\Repos\Tools\gd-forkbridge\tests\ForkBridge.Tests\Fixtures\RepoFixture.cs:line 53
+   at ForkBridge.Tests.Fixtures.RepoFixture.Git(String dir, String[] args) in D:\Repos\Tools\gd-forkbridge\tests\ForkBridge.Tests\Fixtures\RepoFixture.cs:line 37
+   at ForkBridge.Tests.Fixtures.RepoFixture.BuildBackend() in D:\Repos\Tools\gd-forkbridge\tests\ForkBridge.Tests\Fixtures\RepoFixture.cs:line 135
+   at ForkBridge.Tests.Fixtures.RepoFixture..ctor(Boolean frontend) in D:\Repos\Tools\gd-forkbridge\tests\ForkBridge.Tests\Fixtures\RepoFixture.cs:line 31
+   at ForkBridge.Tests.PublishCliBundleTests.Publish_refuses_protected_branches_and_moved_target_base() in D:\Repos\Tools\gd-forkbridge\tests\ForkBridge.Tests\PublishCliBundleTests.cs:line 56
+--- End of stack trace from previous location ---
+  Failed ForkBridge.Tests.PublishCliBundleTests.Discovery_is_read_only_and_proposes_only_evidence_backed_mappings [1 s]
+  Error Message:
+   System.InvalidOperationException : git rm -q -r App.VAM in C:\Users\grego\AppData\Local\Temp\fbtest-38-999a9bcf\work\ISL-Backend failed: error: the following files have local modifications:
+    App.VAM/Vam/Vam.csproj
+    App.VAM/Vam/Vehicle.cs
+(use --cached to keep the file, or -f to force removal)
+
+  Stack Trace:
+     at ForkBridge.Tests.Fixtures.RepoFixture.GitEnv(String dir, Dictionary`2 env, String[] args) in D:\Repos\Tools\gd-forkbridge\tests\ForkBridge.Tests\Fixtures\RepoFixture.cs:line 53
+   at ForkBridge.Tests.Fixtures.RepoFixture.Git(String dir, String[] args) in D:\Repos\Tools\gd-forkbridge\tests\ForkBridge.Tests\Fixtures\RepoFixture.cs:line 37
+   at ForkBridge.Tests.Fixtures.RepoFixture.BuildBackend() in D:\Repos\Tools\gd-forkbridge\tests\ForkBridge.Tests\Fixtures\RepoFixture.cs:line 135
+   at ForkBridge.Tests.Fixtures.RepoFixture..ctor(Boolean frontend) in D:\Repos\Tools\gd-forkbridge\tests\ForkBridge.Tests\Fixtures\RepoFixture.cs:line 31
+   at ForkBridge.Tests.PublishCliBundleTests.Discovery_is_read_only_and_proposes_only_evidence_backed_mappings() in D:\Repos\Tools\gd-forkbridge\tests\ForkBridge.Tests\PublishCliBundleTests.cs:line 146
+--- End of stack trace from previous location ---
+  Failed ForkBridge.Tests.PublishCliBundleTests.Cli_end_to_end_with_documented_exit_codes [1 s]
+  Error Message:
+   System.InvalidOperationException : git rm -q -r App.VAM in C:\Users\grego\AppData\Local\Temp\fbtest-39-e66ccd38\work\ISL-Backend failed: error: the following files have local modifications:
+    App.VAM/Vam/Vam.csproj
+    App.VAM/Vam/Vehicle.cs
+(use --cached to keep the file, or -f to force removal)
+
+  Stack Trace:
+     at ForkBridge.Tests.Fixtures.RepoFixture.GitEnv(String dir, Dictionary`2 env, String[] args) in D:\Repos\Tools\gd-forkbridge\tests\ForkBridge.Tests\Fixtures\RepoFixture.cs:line 53
+   at ForkBridge.Tests.Fixtures.RepoFixture.Git(String dir, String[] args) in D:\Repos\Tools\gd-forkbridge\tests\ForkBridge.Tests\Fixtures\RepoFixture.cs:line 37
+   at ForkBridge.Tests.Fixtures.RepoFixture.BuildBackend() in D:\Repos\Tools\gd-forkbridge\tests\ForkBridge.Tests\Fixtures\RepoFixture.cs:line 135
+   at ForkBridge.Tests.Fixtures.RepoFixture..ctor(Boolean frontend) in D:\Repos\Tools\gd-forkbridge\tests\ForkBridge.Tests\Fixtures\RepoFixture.cs:line 31
+   at ForkBridge.Tests.PublishCliBundleTests.Cli_end_to_end_with_documented_exit_codes() in D:\Repos\Tools\gd-forkbridge\tests\ForkBridge.Tests\PublishCliBundleTests.cs:line 77
+--- End of stack trace from previous location ---
+  Failed ForkBridge.Tests.PublishCliBundleTests.Publish_is_approval_bound_never_forced_and_detects_tampering [1 s]
+  Error Message:
+   System.InvalidOperationException : git rm -q -r App.VAM in C:\Users\grego\AppData\Local\Temp\fbtest-40-ad65d65a\work\ISL-Backend failed: error: the following files have local modifications:
+    App.VAM/Vam/Vam.csproj
+    App.VAM/Vam/Vehicle.cs
+(use --cached to keep the file, or -f to force removal)
+
+  Stack Trace:
+     at ForkBridge.Tests.Fixtures.RepoFixture.GitEnv(String dir, Dictionary`2 env, String[] args) in D:\Repos\Tools\gd-forkbridge\tests\ForkBridge.Tests\Fixtures\RepoFixture.cs:line 53
+   at ForkBridge.Tests.Fixtures.RepoFixture.Git(String dir, String[] args) in D:\Repos\Tools\gd-forkbridge\tests\ForkBridge.Tests\Fixtures\RepoFixture.cs:line 37
+   at ForkBridge.Tests.Fixtures.RepoFixture.BuildBackend() in D:\Repos\Tools\gd-forkbridge\tests\ForkBridge.Tests\Fixtures\RepoFixture.cs:line 135
+   at ForkBridge.Tests.Fixtures.RepoFixture..ctor(Boolean frontend) in D:\Repos\Tools\gd-forkbridge\tests\ForkBridge.Tests\Fixtures\RepoFixture.cs:line 31
+   at ForkBridge.Tests.PublishCliBundleTests.Publish_is_approval_bound_never_forced_and_detects_tampering() in D:\Repos\Tools\gd-forkbridge\tests\ForkBridge.Tests\PublishCliBundleTests.cs:line 25
+--- End of stack trace from previous location ---
+
+Failed!  - Failed:    40, Passed:    16, Skipped:     0, Total:    56, Duration: 43 s - ForkBridge.Tests.dll (net10.0)
