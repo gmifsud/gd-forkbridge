@@ -1,0 +1,11 @@
+<Solution>
+  <Folder Name="/src/">
+    <Project Path="src/ForkBridge.Cli/ForkBridge.Cli.csproj" />
+    <Project Path="src/ForkBridge.Core/ForkBridge.Core.csproj" />
+    <Project Path="src/ForkBridge.Web/ForkBridge.Web.csproj" />
+  </Folder>
+  <Folder Name="/tests/">
+    <Project Path="tests/FixtureTool/FixtureTool.csproj" />
+    <Project Path="tests/ForkBridge.Tests/ForkBridge.Tests.csproj" />
+  </Folder>
+</Solution>

@@ -1,0 +1,8 @@
+bin/
+obj/
+node_modules/
+.angular/
+.forkbridge-state/
+src/ForkBridge.Web/wwwroot/
+*.user
+TestResults/
