@@ -1,0 +1,329 @@
+# yaml-language-server: $schema=./schema/forkbridge.schema.json
+# =====================================================================================================
+# ForkBridge policy - QiSL <-> ISL (Backend + Frontend)                         generated 2026-10-13
+# =====================================================================================================
+# Every value is one of:
+#   (no tag)      safe default, or verified by a read-only look at the repositories
+#   # VERIFIED    seen in the repository contents (ISL-Backend only - read-only git inspection)
+#   # NAMES-ONLY  seen only as a folder name; contents not inspected
+#   # >>> FILL IN  a placeholder you must replace; the text says exactly what to put
+#
+# How to use it the first time:
+#   1. Fill in every ">>> FILL IN" (search for it).
+#   2. forkbridge validate-config
+#   3. forkbridge discover --fetch --write-config draft.yml
+#        -> read the report; it tells you which folders really are shared (content evidence).
+#   4. Change `status: proposed` to `status: confirmed` only for components discover backs up.
+#      (Until then, plans need --allow-proposed and always end in REVIEW_REQUIRED.)
+#   5. Review each validation command, then set `trusted: true` for that profile.
+# =====================================================================================================
+
+version: 1
+
+# Harness-owned state (mirrors, plans, runs, reports). Must be OUTSIDE all four repositories.
+# Created automatically. Needs disk space for full copies of each repo's history.
+stateDir: "D:/ForkBridge/state"
+
+# Optional - only used by `discover` to audit the old script. Uncomment if you keep it somewhere:
+# legacyScript: "D:/Repos/Tools/Fork-Over.ps1"     # >>> FILL IN: path to Fork-Over.ps1, or leave commented
+
+repositories:
+  qisl-backend:  { path: "D:/Repos/Backend", remote: origin, kind: dotnet }             # D: path - C:\Repos is a junction
+  isl-backend:   { path: "D:/Repos/ISL/ISL-Backend", remote: origin, kind: dotnet }     # VERIFIED (origin dev.azure.com/ISLMalta/EBS (Platform)/_git/Backend)
+  qisl-frontend: { path: "D:/Repos/Frontend", remote: origin, kind: angular }           # NAMES-ONLY
+  isl-frontend:  { path: "D:/Repos/ISL/ISL-Frontend", remote: origin, kind: angular }   # NAMES-ONLY
+
+publish:
+  provider: azure-devops   # PRs via your Git Credential Manager login; set to `none` to only push branches
+  draft: true              # PRs are created as drafts
+
+pairs:
+  # ===================================================================================================
+  # BACKEND  - D:/Repos/Backend  <->  D:/Repos/ISL/ISL-Backend
+  # ===================================================================================================
+  backend:
+    products: { qisl: qisl-backend, isl: isl-backend }
+    defaults:
+      targetBase: development      # VERIFIED for ISL (only local branch). >>> FILL IN if QiSL's integration branch is not `development`
+      sourceBase: development
+      validationProfile: default
+      branchPrefix: forkbridge      # published branches: forkbridge/backend/<from>-to-<to>/<run-id>
+    directions:
+      - { from: qisl, to: isl, modes: [pick, reconcile] }   # add `merge` only if you want the old full-history merge style
+      - { from: isl, to: qisl, modes: [pick, reconcile] }
+    protectedBranches: [main, master, development, develop, Development-ISL, "release/*", "hotfix/*"]
+
+    components:
+      # ---- Fabric (platform core) ------------------------------------------------------------------
+      - id: shared-kernel
+        status: proposed
+        paths: { qisl: QiSL.Fabric/Kernel, isl: QiSL.Fabric/Kernel }
+        evidence: "VERIFIED in ISL: 16 QiSL.Platform.SharedKernel.* projects. QiSL contents not inspected."
+      - id: platform
+        status: proposed
+        paths: { qisl: QiSL.Fabric/Platform, isl: QiSL.Fabric/Platform }
+        dependsOn: [shared-kernel]
+        evidence: "VERIFIED in ISL: QiSL.Platform.* projects (product hosts excluded below)."
+      - id: base-template
+        status: proposed
+        paths: { qisl: QiSL.Fabric/BaseTemplate.0, isl: QiSL.Fabric/BaseTemplate.0 }
+      - id: fabric-tests
+        status: proposed
+        paths: { qisl: QiSL.Fabric/test, isl: QiSL.Fabric/test }      # NAMES-ONLY on QiSL side
+      # ---- Line-of-business modules present in BOTH products (name match only - confirm with discover)
+      - id: mod-entity
+        status: proposed
+        paths: { qisl: QiSL.App.Entity, isl: QiSL.App.Entity }
+      - id: mod-workflow
+        status: proposed
+        paths: { qisl: QiSL.App.WF, isl: QiSL.App.WF }
+      - id: mod-warehouse
+        status: proposed
+        paths: { qisl: QiSL.App.WRH, isl: QiSL.App.WRH }
+      # ---- Repo-level build files ----------------------------------------------------------------------
+      - id: central-packages
+        status: proposed
+        paths: { qisl: Directory.Packages.props, isl: Directory.Packages.props }   # VERIFIED in ISL (CPM, 148 versions)
+      - id: solutions
+        status: proposed
+        paths: { qisl: solutions, isl: solutions }     # ISL-only .sln files are excluded below
+      - id: build-scripts
+        status: proposed
+        paths: { qisl: scripts, isl: scripts }
+      - id: builds
+        status: proposed
+        paths: { qisl: builds, isl: builds }
+      # ---- In QiSL only today --------------------------------------------------------------------------
+      - id: grid-query
+        status: placeholder          # >>> FILL IN: change to `proposed` if ISL should receive QiSL.GridQuery, else leave
+        paths: { qisl: QiSL.GridQuery }
+        absent: { isl: "Not in ISL-Backend today" }
+      - id: quality
+        status: placeholder          # >>> FILL IN: same decision for the QiSL `Quality` folder
+        paths: { qisl: Quality }
+        absent: { isl: "Not in ISL-Backend today" }
+
+    productSpecific:
+      qisl:                                        # NAMES-ONLY (top-level folders of D:/Repos/Backend)
+        - "QiSL.App.NL/**"
+        - "QiSL.App.Practice/**"
+        - "QiSL.App.Registration/**"
+        - "QiSL.App.SalesPortal/**"
+        - "QiSL.App.SL/**"
+        - "QiSL.App.VAM/**"
+        - "infrastructure/**"
+        - "patches/**"
+        - "postman/**"
+        - "backups/**"
+        - "worktrees/**"
+        - "**/QiSL.Platform.Web.Host.Vam/**"        # VAM host project name, VERIFIED in ISL's project list
+        - "solutions/QiSL.Platform.Web.VAM.sln"
+        - "solutions/QiSL.Platform.Web - NL.sln"
+        - "solutions/QiSL.Platform.Web - Practice.sln"
+        - "solutions/QiSL.Platform.Web - Registration.sln"
+        - "solutions/QiSL.Platform.Web - Registration - Min.sln"
+        - "solutions/QiSL.Platform.Web - SL.sln"
+      isl:                                         # VERIFIED in ISL-Backend
+        - "QiSL.App.Customer/**"
+        - "QiSL.App.EyeConnect/**"
+        - "QiSL.App.MTL/**"
+        - "**/QiSL.Platform.Web.ISL.Host/**"
+        - "**/QiSL.Platform.Web.ThirdParty.ISL.Host/**"
+        - "**/QiSL.Platform.Web - All Modules - ISL.sln"
+        - "azure-pipelines-isl-fork.yml"
+
+    targetPinned:                                  # target's version always wins; changes are reported, never applied
+      qisl: &backendPinned
+        - "**/appsettings*.json"                   # VERIFIED: 14 appsettings locations in ISL
+        - "**/launchSettings.json"
+        - "azure-pipelines*.yml"                   # VERIFIED: ISL pipeline still references QiSL-only test projects
+        - "nuget.config"
+        - "nuget.pipelines.config"
+        - "**/ExternalServicesConfig.json"         # per-product external-service metadata. >>> FILL IN: delete this line if it SHOULD sync
+      isl: *backendPinned
+
+    generated:
+      - { pattern: "lib/**", action: block, note: "VERIFIED: 286 tracked DLLs consumed via HintPath (480 refs). Rebuild in the target; never transfer." }
+      - { pattern: "nupkg/**", action: block, note: "VERIFIED: 251 tracked package files" }
+      - { pattern: "**/bin/**", action: block }
+      - { pattern: "**/obj/**", action: block }
+      - { pattern: "**/*.Designer.cs", action: block, note: "regenerate from the .resx/.tt source" }
+
+    ignored:                                       # changes here are excluded and listed, never transferred
+      - "docs/**"
+      - "README.md"
+      - ".gitignore"
+      - ".gitattributes"
+      - "Delete-BIN-OBJ-Folders.bat"
+      - "QiSL.Platform.Backend.lnk"
+      - ".github/**"
+      - ".vscode/**"
+      - ".idea/**"
+      - ".vs/**"
+      - ".claude/**"
+      - ".agent/**"
+      - ".agents/**"
+      - ".ai/**"
+      - ".codex/**"
+      - ".cursor/**"
+      - ".gemini/**"
+      - ".junie/**"
+      - ".kilo/**"
+      - ".serena/**"
+      - ".windsurf/**"
+      - ".postman/**"
+      - ".obsidian/**"
+      - ".history/**"
+      - ".dotnet-cli-home/**"
+      - "CLAUDE.md"
+      - "AGENTS.md"
+      # Anything else that changes and is not listed in this file BLOCKS the transfer (by design).
+
+    validation:
+      default:
+        trusted: false   # >>> FILL IN: set true once you have reviewed the commands below (they run your build scripts)
+        steps:
+          # Runs in the TARGET repo (baseline = target base, candidate = target base + transfer), so every
+          # command must work in BOTH repositories.
+          - id: restore
+            kind: restore
+            run: ["dotnet", "restore", "solutions/QiSL.Platform.Web.All.sln"]   # exists in ISL (VERIFIED) and QiSL (its CLAUDE.md)
+            timeoutSeconds: 1800
+          - id: build-host
+            kind: build
+            run: ["dotnet", "build", "QiSL.Fabric/Platform/aspnet-core/src/QiSL.Platform.Web.Host/QiSL.Platform.Web.Host.csproj", "-c", "Release", "--no-restore"]
+            timeoutSeconds: 2400
+          - id: build-all
+            kind: build
+            # Builds producers AND the modules that consume them through lib/*.dll.
+            run: ["dotnet", "build", "solutions/QiSL.Platform.Web.All.sln", "-c", "Release", "--no-restore"]
+            timeoutSeconds: 3600
+          - id: platform-tests
+            kind: test
+            run: ["dotnet", "test", "QiSL.Fabric/Platform/aspnet-core/test/QiSL.Platform.Tests/QiSL.Platform.Tests.csproj", "-c", "Release"]
+            timeoutSeconds: 3600
+            required: false   # >>> FILL IN: set true once you confirm this project builds in BOTH repos and needs no live DB
+            requiresEnv: []   # >>> FILL IN: env vars the tests need, e.g. [FORKBRIDGE_TEST_SQL]; missing => UNAVAILABLE, never PASS
+
+  # ===================================================================================================
+  # FRONTEND - D:/Repos/Frontend  <->  D:/Repos/ISL/ISL-Frontend        (layout: NAMES-ONLY)
+  # ===================================================================================================
+  frontend:
+    products: { qisl: qisl-frontend, isl: isl-frontend }
+    defaults:
+      targetBase: development      # >>> FILL IN: integration branch of both frontend repos if not `development`
+      sourceBase: development
+      validationProfile: default
+      branchPrefix: forkbridge
+    directions:
+      - { from: qisl, to: isl, modes: [pick, reconcile] }
+      - { from: isl, to: qisl, modes: [pick, reconcile] }
+    protectedBranches: [main, master, development, develop, "release/*", "hotfix/*"]
+
+    components:
+      - id: fe-fabric
+        status: proposed
+        paths: { qisl: qisl-client-ng-fabric, isl: qisl-client-ng-fabric }
+        evidence: "NAMES-ONLY: folder exists in both repos"
+      - id: fe-abp-template
+        status: proposed
+        paths: { qisl: abp-zero-template, isl: abp-zero-template }
+      - id: fe-mod-entity
+        status: proposed
+        paths: { qisl: qisl-client-ng-mod-ent, isl: qisl-client-ng-mod-ent }
+      - id: fe-mod-workflow
+        status: proposed
+        paths: { qisl: qisl-client-ng-mod-wf, isl: qisl-client-ng-mod-wf }
+      - id: fe-mod-warehouse
+        status: proposed
+        paths: { qisl: qisl-client-ng-mod-wrh, isl: qisl-client-ng-mod-wrh }
+      - id: fe-scripts
+        status: proposed
+        paths: { qisl: scripts, isl: scripts }
+
+    productSpecific:
+      qisl:                                        # NAMES-ONLY (only in D:/Repos/Frontend)
+        - "qisl-client-ng-mod-nl/**"
+        - "qisl-client-ng-mod-prc/**"
+        - "qisl-client-ng-mod-reg/**"
+        - "qisl-client-ng-mod-salesportal/**"
+        - "qisl-client-ng-mod-sl/**"
+        - "qisl-client-ng-mod-vam/**"
+        - "docker/**"                              # >>> FILL IN: move to a component if ISL should get QiSL's docker setup
+      isl:                                         # NAMES-ONLY (only in D:/Repos/ISL/ISL-Frontend)
+        - "qisl-client-ng-mod-eyeconnect/**"
+        - "qisl-client-ng-mod-mtl/**"
+        - "test/**"                                # >>> FILL IN: make this a component if QiSL should receive it
+
+    targetPinned:
+      qisl: &frontendPinned
+        - "**/src/environments/**"                 # environment.*.ts / API base URLs
+        - "**/appconfig*.json"                     # ABP Zero runtime config (remoteServiceBaseUrl etc.)
+        - "**/src/assets/appconfig*.json"
+        - "**/angular.json"                        # >>> FILL IN: delete this line if angular.json should sync between products
+        - "**/.env*"
+      isl: *frontendPinned
+
+    generated:
+      - { pattern: "**/node_modules/**", action: block }
+      - { pattern: "**/dist/**", action: block }
+      - { pattern: "**/.angular/**", action: block }
+      - { pattern: "**/service-proxies*.ts", action: block, note: "NSwag output - regenerate against the target backend" }   # >>> FILL IN: correct file name if different
+
+    ignored:
+      - "docs/**"
+      - "plans/**"
+      - "build-logs/**"
+      - "nghm-logs/**"
+      - "Claude outputs/**"
+      - "README.md"
+      - ".gitignore"
+      - ".gitattributes"
+      - ".husky/**"
+      - ".github/**"
+      - ".vscode/**"
+      - ".idea/**"
+      - ".claude/**"
+      - ".continue/**"
+      - ".kilo/**"
+      - ".kilocode/**"
+      - ".serena/**"
+      - ".space/**"
+      - ".history/**"
+      - "CLAUDE.md"
+      - "AGENTS.md"
+
+    validation:
+      default:
+        trusted: false   # >>> FILL IN: set true after reviewing the commands
+        steps:
+          # One Angular workspace per qisl-client-ng-* folder is assumed. Repeat the three steps per workspace
+          # you want checked; `whenComponents` skips a workspace the transfer does not touch.
+          - id: fabric-install
+            kind: restore
+            cwd: qisl-client-ng-fabric                       # >>> FILL IN: folder holding package.json (repo root if single workspace)
+            run: ["npm", "ci"]                               # >>> FILL IN: ["yarn","install","--frozen-lockfile"] if the repo uses yarn
+            timeoutSeconds: 1800
+            whenComponents: [fe-fabric, fe-mod-entity, fe-mod-workflow, fe-mod-warehouse]
+          - id: fabric-typecheck
+            kind: typecheck
+            cwd: qisl-client-ng-fabric                       # >>> FILL IN: same folder
+            run: ["npx", "tsc", "-p", "tsconfig.app.json", "--noEmit"]   # >>> FILL IN: correct tsconfig name
+            whenComponents: [fe-fabric, fe-mod-entity, fe-mod-workflow, fe-mod-warehouse]
+          - id: fabric-build
+            kind: build
+            cwd: qisl-client-ng-fabric                       # >>> FILL IN: same folder
+            run: ["npx", "ng", "build", "--configuration", "production"]
+            timeoutSeconds: 3600
+            whenComponents: [fe-fabric, fe-mod-entity, fe-mod-workflow, fe-mod-warehouse]
+
+bundles:
+  fullstack:
+    pairs: [backend, frontend]
+    validation:
+      trusted: false
+      steps:
+        - id: contract-check
+          kind: contract
+          # Runs with FORKBRIDGE_WS_BACKEND and FORKBRIDGE_WS_FRONTEND set to the two candidate workspaces.
+          run: [">>> FILL IN: e.g. pwsh", "-File", ">>> FILL IN: script that regenerates NSwag clients from %FORKBRIDGE_WS_BACKEND% and diffs them"]

@@ -1,0 +1,168 @@
+# yaml-language-server: $schema=../schema/forkbridge.schema.json
+#
+# ForkBridge policy for the QiSL/ISL repositories - STARTING POINT, NOT CONFIRMED.
+#
+# Legend used in comments:
+#   VERIFIED     read-only inspection of ISL-Backend on 2026-10-13 (see docs/discovery-isl-backend.md)
+#   UNVERIFIED   inferred from a names-only folder listing of QiSL Backend; run `forkbridge discover`
+#   PLACEHOLDER  nothing is known; must be filled in before use
+#
+# Every component is status: proposed. Nothing transfers until you change it to confirmed after
+# reviewing `forkbridge discover --write-config draft.yml` output for the real repositories.
+
+version: 1
+stateDir: "D:/ForkBridge/state"          # harness-owned; must NOT be inside any repository
+legacyScript: "D:/ForkBridge/Fork-Over.ps1"   # PLACEHOLDER: wherever you keep it (audit only)
+
+repositories:
+  qisl-backend:  { path: "D:/Repos/Backend", kind: dotnet }                # canonical D: path (C:\Repos is a junction)
+  isl-backend:   { path: "D:/Repos/ISL/ISL-Backend", kind: dotnet }        # VERIFIED: sha1, origin = dev.azure.com/ISLMalta/EBS (Platform)/_git/Backend
+  qisl-frontend: { path: "<PLACEHOLDER: path to QiSL Frontend checkout>", kind: angular, placeholder: true }
+  isl-frontend:  { path: "<PLACEHOLDER: path to ISL-Frontend checkout>", kind: angular, placeholder: true }
+
+publish:
+  provider: azure-devops   # credentials come from your git credential helper (GCM); never stored
+  draft: true
+
+pairs:
+  backend:
+    products: { qisl: qisl-backend, isl: isl-backend }
+    defaults: { targetBase: development, sourceBase: development, validationProfile: default }
+    directions:
+      - { from: qisl, to: isl, modes: [pick, reconcile] }   # add 'merge' only if you keep the full-history merge practice
+      - { from: isl, to: qisl, modes: [pick, reconcile] }
+    components:
+      # VERIFIED in ISL-Backend: QiSL.Fabric/{BaseTemplate.0,Kernel,Platform,test}; 16 SharedKernel projects.
+      # UNVERIFIED in QiSL Backend (folder exists by name only) - discovery must confirm shared content.
+      - id: shared-kernel
+        status: proposed
+        paths: { qisl: QiSL.Fabric/Kernel, isl: QiSL.Fabric/Kernel }
+        evidence: "ISL: 16 QiSL.Platform.SharedKernel.* projects (verified). QiSL side unverified."
+      - id: platform
+        status: proposed
+        paths: { qisl: QiSL.Fabric/Platform, isl: QiSL.Fabric/Platform }
+        dependsOn: [shared-kernel]
+        evidence: "ISL: QiSL.Platform.* projects incl. ISL-only hosts (verified). QiSL side unverified."
+      - id: base-template
+        status: proposed
+        paths: { qisl: QiSL.Fabric/BaseTemplate.0, isl: QiSL.Fabric/BaseTemplate.0 }
+      - id: fabric-tests
+        status: proposed
+        paths: { qisl: QiSL.Fabric/test, isl: QiSL.Fabric/test }   # UNVERIFIED on QiSL side
+      - id: app-entity
+        status: proposed
+        paths: { qisl: QiSL.App.Entity, isl: QiSL.App.Entity }      # present in both by name; content similarity unverified
+      - id: app-wf
+        status: proposed
+        paths: { qisl: QiSL.App.WF, isl: QiSL.App.WF }
+      - id: app-wrh
+        status: proposed
+        paths: { qisl: QiSL.App.WRH, isl: QiSL.App.WRH }
+      - id: central-packages
+        status: proposed
+        paths: { qisl: Directory.Packages.props, isl: Directory.Packages.props }   # VERIFIED in ISL: CPM on, 148 PackageVersion entries
+      # Present in QiSL only (names-only listing) - candidate shared libraries that ISL does not have yet:
+      - id: grid-query
+        status: placeholder
+        paths: { qisl: QiSL.GridQuery }
+        absent: { isl: "PLACEHOLDER: not present in ISL-Backend today - decide whether ISL should receive it" }
+    productSpecific:
+      qisl:                                   # UNVERIFIED (names-only listing of D:\Repos\Backend)
+        - "QiSL.App.NL/**"
+        - "QiSL.App.Practice/**"
+        - "QiSL.App.Registration/**"
+        - "QiSL.App.SalesPortal/**"
+        - "QiSL.App.SL/**"
+        - "QiSL.App.VAM/**"
+        - "QiSL.Fabric/Platform/aspnet-core/src/QiSL.Platform.Web.Host.Vam/**"   # PLACEHOLDER: verify path in QiSL
+      isl:                                    # VERIFIED in ISL-Backend
+        - "QiSL.App.Customer/**"
+        - "QiSL.App.EyeConnect/**"
+        - "QiSL.App.MTL/**"
+        - "QiSL.Fabric/Platform/aspnet-core/src/QiSL.Platform.Web.ISL.Host/**"
+        - "QiSL.Fabric/Platform/aspnet-core/src/QiSL.Platform.Web.ThirdParty.ISL.Host/**"
+        - "QiSL.Fabric/Platform/aspnet-core/QiSL.Platform.Web - All Modules - ISL.sln"
+        - "solutions/QiSL.Platform.Web - All Modules - ISL.sln"
+        - "azure-pipelines-isl-fork.yml"
+    targetPinned:
+      qisl:
+        - "**/appsettings*.json"
+        - "azure-pipelines*.yml"
+        - "nuget.config"
+        - "nuget.pipelines.config"
+      isl:
+        - "**/appsettings*.json"              # VERIFIED: 14 appsettings locations incl. ISL hosts
+        - "azure-pipelines*.yml"              # VERIFIED: ISL pipeline references QiSL-only test projects (stale)
+        - "nuget.config"
+        - "nuget.pipelines.config"
+        - "**/ExternalServicesConfig.json"    # PLACEHOLDER: per-product external-service metadata (EBS config) - confirm
+    generated:
+      - { pattern: "lib/**", action: block, note: "VERIFIED: 286 tracked build outputs consumed via <HintPath>..\\lib\\*.dll (480 refs). Regenerate in the target; never transfer." }
+      - { pattern: "nupkg/**", action: block, note: "VERIFIED: 251 tracked package files" }
+      - { pattern: "**/*.Designer.cs", action: block }
+      - { pattern: "**/bin/**", action: block }
+      - { pattern: "**/obj/**", action: block }
+    ignored:
+      - "docs/**"
+      - "README.md"
+      - "QiSL.Platform.Backend.lnk"
+      - "Delete-BIN-OBJ-Folders.bat"
+    validation:
+      default:
+        trusted: false        # set true only after reviewing every command below
+        steps:
+          # VERIFIED: the ISL pipeline builds this host in Release (azure-pipelines.yml: build_path).
+          # NOTE: HintPath -> lib/*.dll means consumers compile against prebuilt binaries; a shared-code
+          # change is only seen by LOB modules after the producing projects rebuild lib/. Order matters.
+          - id: restore
+            kind: restore
+            run: ["dotnet", "restore", "solutions/QiSL.Platform.All.sln"]          # VERIFIED solution exists in ISL; PLACEHOLDER for QiSL
+            timeoutSeconds: 1800
+          - id: build-shared
+            kind: build
+            run: ["dotnet", "build", "QiSL.Fabric/Platform/aspnet-core/src/QiSL.Platform.Web.Host/QiSL.Platform.Web.Host.csproj", "-c", "Release", "--no-restore"]
+            timeoutSeconds: 2400
+          - id: build-all-consumers
+            kind: build
+            run: ["dotnet", "build", "solutions/QiSL.Platform.All.sln", "-c", "Release", "--no-restore"]
+            timeoutSeconds: 3600
+          - id: platform-tests
+            kind: test
+            run: ["dotnet", "test", "QiSL.Fabric/Platform/aspnet-core/test/QiSL.Platform.Tests/QiSL.Platform.Tests.csproj", "-c", "Release"]
+            timeoutSeconds: 3600
+            requiresEnv: []    # PLACEHOLDER: list connection-string variables the tests need; never point at production
+
+  frontend:
+    products: { qisl: qisl-frontend, isl: isl-frontend }
+    defaults: { targetBase: development, sourceBase: development }
+    directions:
+      - { from: qisl, to: isl, modes: [pick, reconcile] }
+      - { from: isl, to: qisl, modes: [pick, reconcile] }
+    components:
+      - id: shared-ui
+        status: placeholder
+        paths: { qisl: "<PLACEHOLDER: shared library path in QiSL Frontend>", isl: "<PLACEHOLDER: path in ISL-Frontend (may differ)>" }
+    productSpecific: { qisl: [], isl: [] }     # PLACEHOLDER
+    targetPinned:
+      qisl: ["**/environment*.ts", "angular.json"]   # PLACEHOLDER: confirm
+      isl: ["**/environment*.ts", "angular.json"]
+    generated:
+      - { pattern: "**/service-proxies*.ts", action: block, regenerate: "nswag", note: "PLACEHOLDER: generated API clients" }
+    validation:
+      default:
+        trusted: false
+        steps:
+          - { id: install, kind: restore, run: ["npm", "ci"], timeoutSeconds: 1800 }           # uses the lockfile as-is; never rewritten
+          - { id: typecheck, kind: typecheck, run: ["npx", "tsc", "-p", "tsconfig.json", "--noEmit"] }
+          - { id: build, kind: build, run: ["npx", "ng", "build", "--configuration", "production"], timeoutSeconds: 3600 }
+          - { id: lint, kind: lint, run: ["npx", "ng", "lint"], required: false }
+
+bundles:
+  fullstack:
+    pairs: [backend, frontend]
+    validation:
+      trusted: false
+      steps:
+        - id: contract-check
+          kind: contract
+          run: ["<PLACEHOLDER: e.g. regenerate NSwag clients against the candidate backend and diff>"]
