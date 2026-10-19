@@ -1,0 +1,144 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://forkbridge.local/schema/forkbridge.schema.json",
+  "title": "ForkBridge synchronization policy",
+  "description": "Versioned policy for cross-repository transfers. Use in YAML via: # yaml-language-server: $schema=./schema/forkbridge.schema.json",
+  "type": "object",
+  "required": ["version", "repositories", "pairs"],
+  "additionalProperties": false,
+  "properties": {
+    "version": { "const": 1 },
+    "stateDir": { "type": "string", "description": "Harness-owned directory (mirrors, plans, runs, reports). Must not be inside a repository. Relative to the config file." },
+    "legacyScript": { "type": "string", "description": "Optional path to Fork-Over.ps1 for the discovery audit." },
+    "repositories": {
+      "type": "object",
+      "minProperties": 1,
+      "additionalProperties": {
+        "type": "object",
+        "required": ["path"],
+        "additionalProperties": false,
+        "properties": {
+          "path": { "type": "string", "description": "Path of the user's checkout. Only ever read." },
+          "remote": { "type": "string", "default": "origin", "description": "Remote whose URL is used for fetch/publish (read from the checkout, never modified)." },
+          "kind": { "enum": ["dotnet", "angular", "unknown"], "default": "unknown" },
+          "placeholder": { "type": "boolean", "default": false, "description": "true = unverified placeholder path; the repository is never accessed." }
+        }
+      }
+    },
+    "pairs": {
+      "type": "object",
+      "additionalProperties": { "$ref": "#/$defs/pair" }
+    },
+    "bundles": {
+      "type": "object",
+      "additionalProperties": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "pairs": { "type": "array", "items": { "type": "string" } },
+          "validation": { "$ref": "#/$defs/validationProfile" }
+        }
+      }
+    },
+    "publish": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "provider": { "enum": ["none", "azure-devops"], "default": "none" },
+        "draft": { "type": "boolean", "default": true }
+      }
+    }
+  },
+  "$defs": {
+    "glob": { "type": "string", "description": "Repo-relative path or glob ('**' any depth, '*' within a segment). A plain path also matches everything beneath it." },
+    "pair": {
+      "type": "object",
+      "required": ["products", "directions", "components"],
+      "additionalProperties": false,
+      "properties": {
+        "products": {
+          "type": "object", "minProperties": 2, "maxProperties": 2,
+          "additionalProperties": { "type": "string", "description": "Repository alias" }
+        },
+        "defaults": {
+          "type": "object", "additionalProperties": false,
+          "properties": {
+            "targetBase": { "type": "string", "default": "development" },
+            "sourceBase": { "type": "string", "default": "development" },
+            "validationProfile": { "type": "string", "default": "default" },
+            "branchPrefix": { "type": "string", "default": "forkbridge" }
+          }
+        },
+        "directions": {
+          "type": "array",
+          "items": {
+            "type": "object", "required": ["from", "to"], "additionalProperties": false,
+            "properties": {
+              "from": { "type": "string" }, "to": { "type": "string" },
+              "modes": { "type": "array", "items": { "enum": ["pick", "reconcile", "merge"] }, "default": ["pick"] }
+            }
+          }
+        },
+        "components": {
+          "type": "array",
+          "items": {
+            "type": "object", "required": ["id", "status", "paths"], "additionalProperties": false,
+            "properties": {
+              "id": { "type": "string", "pattern": "^[a-z0-9][a-z0-9-]*$" },
+              "status": { "enum": ["proposed", "confirmed", "placeholder"], "description": "Only 'confirmed' components transfer without --allow-proposed." },
+              "description": { "type": "string" },
+              "paths": { "type": "object", "additionalProperties": { "type": ["string", "null"] }, "description": "Product -> directory or file. Paths may differ between products." },
+              "absent": { "type": "object", "additionalProperties": { "type": "string" }, "description": "Product -> reason the component is intentionally absent there." },
+              "dependsOn": { "type": "array", "items": { "type": "string" } },
+              "evidence": { "type": "string", "description": "Why this mapping is believed shared (discovery evidence)." }
+            }
+          }
+        },
+        "productSpecific": { "type": "object", "additionalProperties": { "type": "array", "items": { "$ref": "#/$defs/glob" } } },
+        "targetPinned": { "type": "object", "additionalProperties": { "type": "array", "items": { "$ref": "#/$defs/glob" } }, "description": "Product -> paths whose content is never overwritten when that product is the target." },
+        "generated": {
+          "type": "array",
+          "items": {
+            "type": "object", "required": ["pattern"], "additionalProperties": false,
+            "properties": {
+              "pattern": { "$ref": "#/$defs/glob" },
+              "action": { "enum": ["block", "exclude"], "default": "block" },
+              "regenerate": { "type": "string", "description": "Validation step id that regenerates the files in the target." },
+              "note": { "type": "string" }
+            }
+          }
+        },
+        "ignored": { "type": "array", "items": { "$ref": "#/$defs/glob" }, "description": "Explicitly irrelevant paths (excluded and reported). Nothing is ignored implicitly." },
+        "protectedBranches": { "type": "array", "items": { "type": "string" }, "default": ["main", "master", "development", "develop", "release/*", "hotfix/*"] },
+        "validation": { "type": "object", "additionalProperties": { "$ref": "#/$defs/validationProfile" } }
+      }
+    },
+    "validationProfile": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "trusted": { "type": "boolean", "default": false, "description": "Repository build scripts execute code. Steps run only if true here AND --trust-validation is passed." },
+        "runner": { "enum": ["process", "docker"], "default": "process" },
+        "dockerImage": { "type": "string" },
+        "steps": {
+          "type": "array",
+          "items": {
+            "type": "object", "required": ["id", "run"], "additionalProperties": false,
+            "properties": {
+              "id": { "type": "string" },
+              "kind": { "enum": ["restore", "build", "test", "lint", "typecheck", "contract", "other"], "default": "build" },
+              "run": { "type": "array", "minItems": 1, "items": { "type": "string" }, "description": "Executable followed by arguments. Never passed through a shell." },
+              "cwd": { "type": "string", "default": "." },
+              "timeoutSeconds": { "type": "integer", "minimum": 1, "default": 1800 },
+              "required": { "type": "boolean", "default": true },
+              "maxOutputKb": { "type": "integer", "minimum": 16, "default": 2048 },
+              "whenComponents": { "type": "array", "items": { "type": "string" } },
+              "env": { "type": "object", "additionalProperties": { "type": "string" } },
+              "requiresEnv": { "type": "array", "items": { "type": "string" }, "description": "Missing variables make the step UNAVAILABLE (never a pass)." }
+            }
+          }
+        }
+      }
+    }
+  }
+}
