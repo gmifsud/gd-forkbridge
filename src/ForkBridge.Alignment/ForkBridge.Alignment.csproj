@@ -1,0 +1,16 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <!-- Branch alignment (Harmony) module: bidirectional snapshot reconciliation of the shared scope of a
+       primary repository and its fork. Depends one-way on ForkBridge.Core infrastructure; Core is unchanged. -->
+  <PropertyGroup>
+    <RootNamespace>ForkBridge.Alignment</RootNamespace>
+  </PropertyGroup>
+  <ItemGroup>
+    <ProjectReference Include="..\ForkBridge.Core\ForkBridge.Core.csproj" />
+  </ItemGroup>
+  <ItemGroup>
+    <PackageReference Include="YamlDotNet" />
+  </ItemGroup>
+  <ItemGroup>
+    <InternalsVisibleTo Include="ForkBridge.Alignment.Tests" />
+  </ItemGroup>
+</Project>

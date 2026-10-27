@@ -35,6 +35,8 @@ directory. Nothing is pushed without an approval bound to the exact candidate.
 | `examples/demo/New-ForkBridgeDemo.ps1` | Builds a sandbox of four forked fixture repos to try the full workflow |
 | `scripts/Publish-ForkBridge.ps1` | Release publish; adds the output folder to `PATH` if missing |
 | `ci/` | Azure Pipelines and GitHub Actions examples |
+| `src/ForkBridge.Alignment` | Branch alignment (Harmony): bidirectional reconciliation of a primary/fork shared scope on any worktree - see `docs/alignment.md` |
+| `scripts/branch-alignment*` | PowerShell reference implementation of branch alignment (Backend, Frontend) |
 | `docs/` | Architecture & threat model, discovery report, Fork-Over.ps1 audit, CLI, troubleshooting, limitations |
 
 ## Setup

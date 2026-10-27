@@ -33,6 +33,7 @@ public static class Program
         try
         {
             var cfgPath = a.Get("config") ?? Environment.GetEnvironmentVariable("FORKBRIDGE_CONFIG") ?? "forkbridge.yml";
+            if (a.Command == "align") return await AlignCommands.GuardedAsync(a, cfgPath, stdout, stderr, ct);
             if (a.Command == "validate-config")
             {
                 var c = ConfigLoader.Load(cfgPath);
@@ -230,7 +231,7 @@ public sealed class Args
     private readonly Dictionary<string, List<string>> _opts = new();
     private static readonly HashSet<string> Multi = ["commits", "components", "accept", "plans", "reapply"];
     private static readonly HashSet<string> Flags = ["json", "help", "offline", "fetch", "allow-proposed", "prefer-local", "trust-validation", "preserve-workspace",
-        "skip-validation", "approve", "create-pr", "all-finished"];
+        "skip-validation", "approve", "create-pr", "all-finished", "preview"];
 
     public static Args Parse(string[] argv)
     {
