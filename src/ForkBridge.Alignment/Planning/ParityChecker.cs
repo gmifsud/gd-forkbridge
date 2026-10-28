@@ -65,3 +65,35 @@ public static class ParityChecker
             m.GetProperty("syncBase").GetString()!, m.TryGetProperty("preview", out var pv) && pv.GetBoolean(), scope);
     }
 }
+
+/// <summary>Decision edits never modify a saved plan: they produce a derived plan (new id, ParentPlanId set,
+/// new content hash) - the same immutability rule as ForkBridge transfer plans.</summary>
+public static class PlanDerivation
+{
+    public static AlignmentPlan WithDecisions(AlignmentPlan parent, IReadOnlyDictionary<string, Decision> edits, string primaryCode)
+    {
+        var byPath = parent.Rows.ToDictionary(r => r.Path, StringComparer.Ordinal);
+        foreach (var p in edits.Keys)
+            if (!byPath.ContainsKey(p)) throw new ArgumentException($"Path '{p}' is not a row of plan {parent.Id}.");
+        var rows = parent.Rows.Select(r =>
+        {
+            var changed = edits.TryGetValue(r.Path, out var d) && d != r.Decision;
+            return new AlignmentRow
+            {
+                Path = r.Path, Category = r.Category, Decision = changed ? d : r.Decision,
+                Reason = changed ? $"{r.Reason} [changed in review: was {DecisionNames.Legacy(r.Decision, primaryCode)}]" : r.Reason,
+                Refs = r.Refs, Base = r.Base, Primary = r.Primary, Fork = r.Fork, Merged = r.Merged, CleanMerge = r.CleanMerge,
+            };
+        }).ToList();
+        foreach (var r in rows.Where(r => r.Decision == Decision.Merged && r.Merged is null))
+            throw new ArgumentException($"{r.Path}: MERGED needs a merged blob; this row has none.");
+        var plan = new AlignmentPlan
+        {
+            Id = Core.Storage.StateStore.NewId("ap"), ParentPlanId = parent.Id, Profile = parent.Profile, ProfileHash = parent.ProfileHash,
+            SyncBase = parent.SyncBase, Scope = parent.Scope, Primary = parent.Primary, Fork = parent.Fork, BaseTree = parent.BaseTree,
+            MergedTree = parent.MergedTree, Identical = parent.Identical, Preview = parent.Preview, Rows = rows, CreatedAt = DateTimeOffset.UtcNow,
+        };
+        plan.ContentHash = PlanHash.Compute(plan);
+        return plan;
+    }
+}

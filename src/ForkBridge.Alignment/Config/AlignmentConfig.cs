@@ -41,6 +41,23 @@ public sealed class AlignmentProfile
     public List<string> NeverPush { get; set; } = new();
     /// <summary>Optional trailer appended to alignment commit messages.</summary>
     public string? CommitTrailer { get; set; }
+    /// <summary>Optional sync ledger (JSON array with nextSyncBase entries, e.g. the PS suite's sync-ledger.json);
+    /// its entries become SyncBase candidates.</summary>
+    public string? Ledger { get; set; }
+    public AdvisorSpec Advisor { get; set; } = new();
+}
+
+/// <summary>SyncBase Advisor tuning (Addendum A §3).</summary>
+public sealed class AdvisorSpec
+{
+    public int RevertWeight { get; set; } = 5;
+    public int MergeWeight { get; set; } = 1;
+    public int ConflictWeight { get; set; } = 3;
+    /// <summary>Fork commits touching at least this many scoped files are matched as bulk imports/overlays.</summary>
+    public int OverlayThreshold { get; set; } = 50;
+    public int MaxCommitsPerLine { get; set; } = 150;
+    public int MaxWindowDays { get; set; } = 180;
+    public int MaxCandidates { get; set; } = 10;
 }
 
 public sealed class SideProfile

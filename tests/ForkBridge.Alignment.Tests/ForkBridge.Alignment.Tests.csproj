@@ -10,6 +10,7 @@
   <ItemGroup>
     <ProjectReference Include="..\..\src\ForkBridge.Alignment\ForkBridge.Alignment.csproj" />
     <ProjectReference Include="..\..\src\ForkBridge.Cli\ForkBridge.Cli.csproj" />
+    <ProjectReference Include="..\..\src\ForkBridge.Web\ForkBridge.Web.csproj" />
   </ItemGroup>
   <ItemGroup>
     <Using Include="Xunit" />

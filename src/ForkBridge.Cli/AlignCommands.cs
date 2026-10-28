@@ -1,4 +1,5 @@
 using System.Text.Json;
+using ForkBridge.Alignment.Advisor;
 using ForkBridge.Alignment.Config;
 using ForkBridge.Alignment.Git;
 using ForkBridge.Alignment.Model;
@@ -28,6 +29,9 @@ internal static class AlignCommands
                           --primary-rev <ref> --fork-rev <ref>     explicit revisions
                --sync-base <sha>                 override the profile's SyncBase for this plan
           show --profile <p> [--plan <id>]      print a saved plan (default: latest)
+          syncbase --profile <p> --primary-rev <ref> --fork-rev <ref>
+                                                SyncBase Advisor: candidates, scores, recommendation
+                                                (weights from the profile; --json for the full graph data)
           parity --profile <p> --golden <dir|plan.tsv>
                                                 replay a PS reference plan's inputs and compare
                                                 (Path, Category, Decision, Merged); exit 0 = parity
@@ -103,6 +107,20 @@ internal static class AlignCommands
                 if (json) { await stdout.WriteLineAsync(JsonSerializer.Serialize(new { plan.Id, plan.ContentHash, dir, rows = plan.Rows.Count, plan.Identical }, StateStore.Json)); }
                 else await stdout.WriteAsync(Summary(plan, planner.PrimaryCode, dir));
                 return plan.Rows.Any(r => r.Decision == Decision.Manual) ? ExitCodes.ReviewRequired : ExitCodes.Ok;
+            }
+            case "syncbase":
+            {
+                var advisor = new SyncBaseAdvisor(profile, git, json ? null : st => stderr.WriteLine($"== {st}"));
+                var res = await advisor.AdviseAsync(new AdvisorRequest(a.Require("primary-rev"), a.Require("fork-rev")), ct);
+                if (json) { await stdout.WriteLineAsync(JsonSerializer.Serialize(res, StateStore.Json)); return ExitCodes.Ok; }
+                await stdout.WriteLineAsync($"SyncBase Advisor ({profile.Name}): primary {Short(res.PrimaryRev)} <-> fork {Short(res.ForkRev)}; weights revert {res.Weights.Revert} / merge {res.Weights.Merge} / conflict {res.Weights.Conflict}");
+                await stdout.WriteLineAsync($"  recommended {Short(res.Recommended)}  confidence {res.Confidence}  (profile: {Short(res.Configured)})");
+                foreach (var r in res.Rationale) await stdout.WriteLineAsync($"  - {r}");
+                await stdout.WriteLineAsync($"  {"candidate",-10} {"score",5} {"risk",4} {"merge",5} {"confl",5} {"promo",5} {"fit",7}  sources");
+                foreach (var c in res.Candidates)
+                    await stdout.WriteLineAsync($"  {c.Sha[..10]} {c.Score,5} {c.Risk,4} {c.Merges,5} {c.Conflicts,5} {c.Promotions,5} {c.Fit,7:P1}  {string.Join(", ", c.Sources)}{(c.IsTransient ? "  [transient]" : "")}  {c.Date} {c.Subject}");
+                foreach (var wn in res.Warnings) await stdout.WriteLineAsync($"  warning: {wn}");
+                return ExitCodes.Ok;
             }
             case "show":
             {

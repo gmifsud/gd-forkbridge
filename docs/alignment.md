@@ -15,10 +15,10 @@ reference: `scripts/branch-alignment` (Backend) and `scripts/branch-alignment-fr
 | 0 | PS suites frozen as reference, golden corpus | done |
 | 1 | profiles, worktree catalogue, scratch repo, plan store, CLI | done |
 | 2 | planner (classification, merge, fork additions, overrides, reference tags, stale fixpoint, manifest unions), plan.json/tsv/md, parity checker | done - real-repo parity pending a Windows run |
-| 3 / 3b | web API + Harmony screen; SyncBase Advisor | next |
+| 3 / 3b | web API + Harmony screen; SyncBase Advisor | done - review only; Apply/Verify/Publish locked until phase 4 |
 | 4–6 | apply / verify / undo, publish, restore, cut-over | later |
 
-Phases 1–2 are **read-only for every repository**: planning reads objects through a harness-owned scratch
+Phases 1–3 are **read-only for every repository**: planning reads objects through a harness-owned scratch
 repository (`<stateDir>/<profile>/xrepo.git`, alternates to both object stores) and writes only under the
 state directory.
 
@@ -47,6 +47,7 @@ forkbridge align plan --profile backend --primary-worktree <id> --fork-worktree 
 forkbridge align plan --profile backend --primary-rev <ref> --fork-rev <ref> [--sync-base <sha>]
 forkbridge align show --profile backend [--plan <id>]
 forkbridge align parity --profile backend --golden D:\ForkBridge\state\branch-alignment\plans\<ts>
+forkbridge align syncbase --profile backend --primary-rev <sha> --fork-rev <sha> [--json]   # SyncBase Advisor
 ```
 
 Add `--config <forkbridge.yml>` and `--alignment-config <file>` as needed. Exit codes follow the CLI table:
@@ -66,3 +67,27 @@ Git **2.40+**. Scoped trees are wrapped in parentless commits inside the scratch
 `align parity` replays the inputs recorded in a PS plan's meta line (revisions, SyncBase) with the current
 profile and compares `(Path, Category, Decision, Merged)`. Reason texts are not compared. The golden corpus
 manifest is `D:\ForkBridge\state\alignment\golden\manifest.json`; golden data stays outside this repository.
+
+## Harmony screen (phase 3)
+
+`forkbridge-web` → **Harmony** (`/harmony`). Dark grey / orange theme scoped to the two screens.
+
+1. **Select** a profile (Backend / Frontend) and a worktree per side. Badges: main checkout, protected (never
+   pushed), scope dirty / clean, ahead / behind, plan pinned.
+2. **Plan** (or *Preview plan* for the profile's base refs) runs as a job and stores an immutable plan.
+3. **Review**: the harmony meter (identical today / converge on apply / declared divergence / needs a decision),
+   queue facets, a filterable row table with a per-row decision, and a side panel with blob ids, on-apply
+   effects and 3-way diffs. Decision edits never touch the plan: *Save as new plan* writes a derived plan
+   (`ParentPlanId`, reason suffix `[changed in review: was X]`). *Add override to profile* writes the row's
+   decision into the profile's `overrides` (surgical edit, `.bak` kept).
+
+**SyncBase** (`/harmony/<profile>/syncbase?plan=<id>`) runs the Advisor for the plan's two commits: the primary
+lane (scope-touching commits, newest first, prefilter score and evidence badges), the fork's bulk imports
+matched to the closest primary state, and fully simulated candidates scored
+`revert × risks + merge × merges + conflict × conflicts` (profile `advisor` weights, adjustable per run).
+*Use for this session* feeds the next plan only (browser session); *Make profile default* rewrites the
+profile's `syncBase` line (previous value kept as a comment, `.bak` written). Set `ledger:` on a profile to
+add `sync-ledger.json` entries as candidates.
+
+API: `/api/align/*` - same loopback + token model as the rest of the API. Inputs are profile names, worktree
+ids, plan ids, row paths of a plan and hex commit ids; blobs are served only when the plan references them.

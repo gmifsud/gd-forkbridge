@@ -86,6 +86,7 @@ public static class WebHost
         app.UseDefaultFiles();
         app.UseStaticFiles();
         MapApi(app, engine, jobs);
+        AlignmentEndpoints.Map(app, o.ConfigPath, jobs);
         app.MapFallbackToFile("index.html");
         return app;
     }

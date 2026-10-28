@@ -67,7 +67,12 @@
           "restoreAfterBuild": { "type": "array", "items": { "type": "string" } },
           "warnDirtyAfterBuild": { "type": "array", "items": { "type": "string" } } } },
         "neverPush": { "type": "array", "items": { "type": "string" } },
-        "commitTrailer": { "type": "string" }
+        "commitTrailer": { "type": "string" },
+        "ledger": { "type": "string", "description": "Sync ledger JSON (nextSyncBase entries) used as SyncBase candidates." },
+        "advisor": { "type": "object", "additionalProperties": false, "properties": {
+          "revertWeight": { "type": "integer", "minimum": 0 }, "mergeWeight": { "type": "integer", "minimum": 0 }, "conflictWeight": { "type": "integer", "minimum": 0 },
+          "overlayThreshold": { "type": "integer", "minimum": 1 }, "maxCommitsPerLine": { "type": "integer", "minimum": 10 },
+          "maxWindowDays": { "type": "integer", "minimum": 7 }, "maxCandidates": { "type": "integer", "minimum": 2 } } }
       }
     }
   }
