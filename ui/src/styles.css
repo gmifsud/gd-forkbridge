@@ -1,34 +1,37 @@
 :root {
-  --bg: #f6f7f9; --panel: #ffffff; --ink: #1d2433; --muted: #667085; --line: #e3e6eb; --accent: #2f5bd3;
-  --ok: #1f7a4d; --okbg: #e3f4ea; --warn: #9a5b00; --warnbg: #fff3d6; --bad: #b42318; --badbg: #fde7e5; --info: #3d4a63; --infobg: #eef1f6;
+  /* One dark grey + orange theme for the whole app (Harmony uses the same tokens). Orange is for selection and actions. */
+  color-scheme: dark;
+  --bg: #1C1C1F; --panel: #26262B; --sunk: #1F1F23; --head: #222227; --line: #3A3A42; --line2: #303036; --ctl: #4A4A54;
+  --ink: #EDEDF0; --ink2: #D4D4D8; --ink3: #C4C4CC; --muted: #A1A1AA; --faint: #8B8B94; --white: #FFFFFF;
+  --accent: #F97316; --accent-ink: #FB923C; --accent-soft: #FDBA74; --on-accent: #18181B;
+  --ok: #5EEAD4; --okbg: rgba(45, 212, 191, .12); --warn: #FCD34D; --warnbg: rgba(251, 191, 36, .12);
+  --bad: #FCA5A5; --badbg: rgba(248, 113, 113, .12); --info: #D4D4D8; --infobg: #2E2E34;
   --mono: ui-monospace, "Cascadia Code", "SF Mono", Consolas, monospace;
-}
-@media (prefers-color-scheme: dark) {
-  :root { --bg: #11151c; --panel: #171c25; --ink: #e4e8ef; --muted: #98a2b3; --line: #2a3140; --accent: #7aa2ff;
-    --okbg: #12301f; --ok: #6fd39c; --warnbg: #3a2c0b; --warn: #f0c060; --badbg: #3d1512; --bad: #ff8a80; --infobg: #1f2633; --info: #b8c3d6; }
 }
 * { box-sizing: border-box; }
 body { margin: 0; background: var(--bg); color: var(--ink); font: 14px/1.45 system-ui, -apple-system, "Segoe UI", sans-serif; }
 header { display: flex; gap: 24px; align-items: center; padding: 10px 20px; background: var(--panel); border-bottom: 1px solid var(--line); position: sticky; top: 0; z-index: 2; }
 .brand { font-weight: 700; letter-spacing: .02em; }
 header nav a { margin-right: 14px; color: var(--muted); text-decoration: none; }
-header nav a.on { color: var(--ink); font-weight: 600; }
+header nav a:hover { color: var(--ink); }
+header nav a.on { color: var(--ink); font-weight: 600; box-shadow: 0 2px 0 var(--accent); }
+.brand span { color: var(--accent); }
 .local { margin-left: auto; color: var(--muted); font-size: 12px; }
 main { padding: 16px 20px 60px; max-width: 1400px; margin: 0 auto; }
 h2 { margin: 6px 0 10px; font-size: 20px; } h3 { margin: 18px 0 8px; font-size: 15px; } h4 { margin: 4px 0; font-size: 12px; color: var(--muted); }
 code, pre { font-family: var(--mono); font-size: 12px; }
 code { background: var(--infobg); padding: 1px 4px; border-radius: 4px; margin-right: 2px; word-break: break-all; }
-a { color: var(--accent); }
+a { color: var(--accent-ink); } a:hover { color: var(--accent-soft); }
 .card { background: var(--panel); border: 1px solid var(--line); border-radius: 8px; padding: 12px 16px; margin: 10px 0; }
 .grid2 { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
 @media (max-width: 900px) { .grid2 { grid-template-columns: 1fr; } }
 label { display: block; margin: 6px 0; color: var(--muted); font-size: 12px; }
 label.inline { display: inline-flex; gap: 6px; align-items: center; margin-right: 16px; }
 label.block { display: block; color: var(--ink); font-size: 13px; }
-input, select { font: inherit; color: var(--ink); background: var(--bg); border: 1px solid var(--line); border-radius: 6px; padding: 5px 8px; }
+input, select { font: inherit; color: var(--ink); background: var(--sunk); border: 1px solid var(--ctl); border-radius: 6px; padding: 5px 8px; }
 label > input:not([type=checkbox]), label > select { display: block; width: 100%; margin-top: 3px; }
 button { font: inherit; border: 1px solid var(--line); background: var(--panel); color: var(--ink); border-radius: 6px; padding: 5px 12px; cursor: pointer; }
-button.primary { background: var(--accent); color: #fff; border-color: var(--accent); }
+button.primary { background: var(--accent); color: var(--on-accent); border-color: var(--accent); font-weight: 600; }
 button.danger { color: var(--bad); }
 button.small, .small { font-size: 12px; }
 button:disabled { opacity: .5; cursor: not-allowed; }

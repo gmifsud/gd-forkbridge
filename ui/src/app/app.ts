@@ -7,7 +7,7 @@ import { Api } from './api';
   imports: [RouterOutlet, RouterLink, RouterLinkActive],
   template: `
     <header>
-      <span class="brand">ForkBridge</span>
+      <span class="brand">Fork<span>Bridge</span></span>
       <nav>
         <a routerLink="/" routerLinkActive="on" [routerLinkActiveOptions]="{ exact: true }">New plan</a>
         <a routerLink="/runs" routerLinkActive="on">History</a>

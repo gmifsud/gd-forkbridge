@@ -1,7 +1,7 @@
-import { Component, computed, inject, OnInit, signal } from '@angular/core';
-import { RouterLink } from '@angular/router';
+import { Component, computed, effect, inject, OnInit, signal, untracked } from '@angular/core';
+import { ActivatedRoute, Router, RouterLink } from '@angular/router';
 import {
-  AlignPlan, AlignRow, Blob, categoryLabel, Decision, DECISIONS, decisionInfo, DiffLine, HarmonyApi, lineDiff, PlanSummary,
+  AlignPlan, AlignRow, Blob, categoryLabel, Decision, DECISIONS, decisionInfo, DiffLine, HarmonyApi, HarmonyState, lineDiff, PlanSummary,
   ProfileInfo, short, Worktree,
 } from './harmony-api';
 import { HARMONY_THEME } from './harmony-theme';
@@ -52,9 +52,9 @@ interface ViewRow { row: AlignRow; eff: Decision; edited: boolean; leaf: string;
     .blobs div { padding: 8px 10px; border-bottom: 1px solid var(--h-line2); background: var(--h-head); }
     .apply { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px; font-size: 12px; }
     .apply > div { border-radius: 8px; padding: 8px 10px; border: 1px solid; }
-    .tabs { display: flex; flex-wrap: wrap; gap: 4px; }
-    .tabs button { min-height: 32px; padding: 0 10px; border-radius: 6px; border: 1px solid var(--h-line); background: transparent; color: var(--h-muted); font: inherit; font-size: 12px; cursor: pointer; }
-    .tabs button.on { border-color: var(--h-accent); color: var(--h-accent-soft); }
+    .dtabs { display: flex; flex-wrap: wrap; gap: 4px; }
+    .dtabs button { min-height: 32px; padding: 0 10px; border-radius: 6px; border: 1px solid var(--h-line); background: transparent; color: var(--h-muted); font: inherit; font-size: 12px; cursor: pointer; }
+    .dtabs button.on { border-color: var(--h-accent); color: var(--h-accent-soft); }
     .diff { max-height: 420px; overflow: auto; background: #151518; border: 1px solid var(--h-line); border-radius: 8px; font: 12px/1.5 var(--h-mono); white-space: pre; }
     .diff div { padding: 0 8px; }
     .diff .add { background: rgba(45,212,191,.12); color: #A7F3D0; } .diff .del { background: rgba(248,113,113,.12); color: #FECACA; }
@@ -164,7 +164,7 @@ interface ViewRow { row: AlignRow; eff: Decision; edited: boolean; leaf: string;
         @if (editCount() > 0) {
           <div class="note accent bar" role="status">
             <span><b style="color: var(--h-accent-soft)">Derived plan (unsaved)</b> — {{ editCount() }} decision change(s) on top of <span class="mono">{{ pl.id }}</span>. The original plan stays immutable.</span>
-            <span class="grow bar" style="gap: 8px"><button type="button" class="btn" (click)="edits.set({})">Discard</button>
+            <span class="grow bar" style="gap: 8px"><button type="button" class="btn" (click)="edits.set({}); toast.set(null)">Discard</button>
               <button type="button" class="btn primary" (click)="saveDerived()" [disabled]="!!busy()">Save as new plan</button></span>
           </div>
         }
@@ -228,7 +228,7 @@ interface ViewRow { row: AlignRow; eff: Decision; edited: boolean; leaf: string;
                 <div style="background: rgba(251,191,36,.08); border-color: rgba(251,191,36,.3)"><div style="font-weight: 600; color: var(--h-isl)">{{ profile()?.fork?.label }}</div>{{ onApply(v, 'f') }}</div>
               </div>
               <div class="eyebrow">Diff</div>
-              <div class="tabs" role="tablist">
+              <div class="dtabs" role="tablist">
                 <button type="button" [class.on]="diffTab() === 'base-primary'" (click)="showDiff('base-primary')">base → {{ profile()?.primary?.label }}</button>
                 <button type="button" [class.on]="diffTab() === 'base-fork'" (click)="showDiff('base-fork')">base → {{ profile()?.fork?.label }}</button>
                 <button type="button" [class.on]="diffTab() === 'primary-fork'" (click)="showDiff('primary-fork')">{{ profile()?.primary?.label }} → {{ profile()?.fork?.label }}</button>
@@ -253,6 +253,10 @@ interface ViewRow { row: AlignRow; eff: Decision; edited: boolean; leaf: string;
 })
 export class HarmonyPage implements OnInit {
   private readonly h = inject(HarmonyApi);
+  private readonly router = inject(Router);
+  private readonly route = inject(ActivatedRoute);
+  /** Set once the initial restore is done; before that, state changes are not written back. */
+  private readonly ready = signal(false);
   readonly busy = this.h.api.busy;
   readonly short = short;
   readonly decisions = DECISIONS;
@@ -369,42 +373,78 @@ export class HarmonyPage implements OnInit {
     return { row: r, eff: this.eff(r), edited: this.edits()[r.path] !== undefined, leaf: parts[parts.length - 1], dir: parts.slice(0, -1).join('/'), cat: categoryLabel(r.category, this.code()) };
   }
 
+  constructor() {
+    // Write the selection back to the URL (refresh / back button) and sessionStorage (nav link, SyncBase's back
+    // link), and keep unsaved decision edits per plan. Signals read here are the whole persisted state.
+    effect(() => {
+      const s: HarmonyState = {
+        profile: this.profileName() || undefined, p: this.pwt() ?? undefined, f: this.fwt() ?? undefined, plan: this.planId() ?? undefined,
+        row: this.selPath() ?? undefined, facet: this.facet() === 'all' ? undefined : this.facet(), q: this.q() || undefined,
+      };
+      const edits = this.edits();
+      if (!this.ready()) return;
+      untracked(() => {
+        this.h.saveState(s);
+        if (s.profile && s.plan) this.h.saveEdits(s.profile, s.plan, edits);
+        void this.router.navigate([], { relativeTo: this.route, queryParams: s, replaceUrl: true });
+      });
+    });
+  }
+
   async ngOnInit() {
     const res = await this.h.api.run('Loading profiles', () => this.h.profiles());
     if (!res) return;
     this.configPath.set(res.configPath); this.configFound.set(res.found); this.profiles.set(res.profiles);
-    const first = res.profiles.find((p) => p.name === 'backend' && p.valid) ?? res.profiles.find((p) => p.valid) ?? res.profiles[0];
-    if (first) await this.selectProfile(first.name);
+    // Precedence: URL (refresh, shared link) > session (nav link, back from SyncBase) > defaults.
+    const qp = this.route.snapshot.queryParamMap;
+    const fromUrl: HarmonyState | null = qp.has('profile')
+      ? { profile: qp.get('profile')!, p: qp.get('p') ?? undefined, f: qp.get('f') ?? undefined, plan: qp.get('plan') ?? undefined,
+          row: qp.get('row') ?? undefined, facet: qp.get('facet') ?? undefined, q: qp.get('q') ?? undefined }
+      : null;
+    const restore = fromUrl ?? this.h.loadState();
+    const wanted = restore?.profile ? res.profiles.find((p) => p.name === restore.profile) : undefined;
+    const first = wanted ?? res.profiles.find((p) => p.name === 'backend' && p.valid) ?? res.profiles.find((p) => p.valid) ?? res.profiles[0];
+    try { if (first) await this.selectProfile(first.name, wanted ? restore! : undefined); }
+    finally { this.ready.set(true); }
   }
 
-  async selectProfile(name: string) {
+  async selectProfile(name: string, restore?: HarmonyState) {
     this.profileName.set(name);
-    this.plan.set(null); this.planId.set(null); this.edits.set({}); this.facet.set('all'); this.selPath.set(null); this.toast.set(null);
+    this.plan.set(null); this.planId.set(null); this.edits.set({}); this.selPath.set(null); this.toast.set(null);
+    this.facet.set(restore?.facet ?? 'all'); this.q.set(restore?.q ?? '');
     this.sessionSyncBase.set(this.h.sessionSyncBase(name));
     if (!this.profile()?.valid) return;
     const [wts, plans] = await Promise.all([this.h.api.run('Listing worktrees', () => this.h.worktrees(name)), this.h.api.run('Loading plans', () => this.h.plans(name))]);
     this.worktrees.set(wts ?? []);
     this.plans.set((plans ?? []).filter((p) => !p.error));
-    const latest = this.plans()[0];
-    this.pickDefaultWorktrees(latest);
-    if (latest) await this.openPlan(latest.id);
+    const target = this.plans().find((p) => p.id === restore?.plan) ?? this.plans()[0];
+    this.pickWorktrees(target, restore);
+    if (target) await this.openPlan(target.id, restore?.row);
   }
 
-  private pickDefaultWorktrees(latest?: PlanSummary) {
+  /** Restored ids win when they still exist; otherwise the plan's branch, the profile's planned branch, the main checkout. */
+  private pickWorktrees(latest?: PlanSummary, restore?: HarmonyState) {
     const p = this.profile();
-    const pick = (list: Worktree[], planned?: string, planBranch?: string) =>
-      (list.find((w) => planBranch && w.branch === planBranch) ?? list.find((w) => planned && w.branch === planned) ?? list.find((w) => w.isMain) ?? list[0])?.id ?? null;
-    this.pwt.set(pick(this.primaryWts(), p?.primary?.plannedBranch, latest?.primary?.branch));
-    this.fwt.set(pick(this.forkWts(), p?.fork?.plannedBranch, latest?.fork?.branch));
+    const pick = (list: Worktree[], kept?: string, planned?: string, planBranch?: string) =>
+      (list.find((w) => kept && w.id === kept) ?? list.find((w) => planBranch && w.branch === planBranch) ?? list.find((w) => planned && w.branch === planned)
+        ?? list.find((w) => w.isMain) ?? list[0])?.id ?? null;
+    this.pwt.set(pick(this.primaryWts(), restore?.p, p?.primary?.plannedBranch, latest?.primary?.branch));
+    this.fwt.set(pick(this.forkWts(), restore?.f, p?.fork?.plannedBranch, latest?.fork?.branch));
   }
 
-  async openPlan(id: string) {
+  async openPlan(id: string, row?: string) {
     if (!id) return;
     const pl = await this.h.api.run('Loading plan', () => this.h.plan(this.profileName(), id));
     if (!pl) return;
-    this.planId.set(id); this.plan.set(pl); this.edits.set({}); this.diffLines.set(null); this.diffMsg.set(null);
+    // Unsaved edits survive navigation and refresh; drop any that no longer apply to this plan's rows.
+    const byPath = new Map(pl.rows.map((r) => [r.path, r] as const));
+    const kept = Object.fromEntries(Object.entries(this.h.loadEdits(this.profileName(), id))
+      .filter(([path, d]) => byPath.has(path) && byPath.get(path)!.decision !== d && DECISIONS.some((x) => x.key === d)));
+    this.planId.set(id); this.plan.set(pl); this.edits.set(kept as Record<string, Decision>); this.diffLines.set(null); this.diffMsg.set(null);
+    const n = Object.keys(kept).length;
+    if (n) this.toast.set(`Restored ${n} unsaved decision change(s) for ${id}. Save as new plan or Discard.`);
     const firstPromo = pl.rows.find((r) => r.decision === 'Manual') ?? pl.rows.find((r) => r.decision === 'TakeFork') ?? pl.rows[0];
-    this.selPath.set(firstPromo?.path ?? null);
+    this.selPath.set(row && byPath.has(row) ? row : firstPromo?.path ?? null);
   }
 
   async runPlan(preview: boolean) {
@@ -431,6 +471,7 @@ export class HarmonyPage implements OnInit {
     const id = this.planId(); if (!id) return;
     const r = await this.h.api.run('Saving derived plan', () => this.h.saveDecisions(this.profileName(), id, this.edits()));
     if (!r) return;
+    this.h.saveEdits(this.profileName(), id, {});   // now part of the derived plan
     this.plans.set((await this.h.plans(this.profileName())).filter((p) => !p.error));
     await this.openPlan(r.id);
     this.toast.set(`Saved derived plan ${r.id} (parent ${r.parentPlanId}, ${r.changed} change(s)). The original plan is unchanged.`);

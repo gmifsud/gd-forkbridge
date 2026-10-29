@@ -21,6 +21,20 @@ export class HarmonyApi {
     return this.api.post<{ pattern: string }>(`/align/${enc(profile)}/profile/override`, { pattern, decision, reason });
   }
 
+  /** Harmony selection (profile, worktrees, plan, row, filters). Mirrored in the URL and in sessionStorage so a
+   *  refresh, the nav link and "Back to Harmony" all return to the same review. */
+  loadState(): HarmonyState | null { try { return JSON.parse(sessionStorage.getItem('harmony.state') ?? 'null'); } catch { return null; } }
+  saveState(s: HarmonyState) { try { sessionStorage.setItem('harmony.state', JSON.stringify(s)); } catch { /* storage unavailable */ } }
+
+  /** Unsaved decision edits of one plan (a derived plan is only written on "Save as new plan"). */
+  loadEdits(profile: string, planId: string): Record<string, Decision> {
+    try { return JSON.parse(sessionStorage.getItem(`harmony.edits.${profile}.${planId}`) ?? '{}'); } catch { return {}; }
+  }
+  saveEdits(profile: string, planId: string, edits: Record<string, Decision>) {
+    const k = `harmony.edits.${profile}.${planId}`;
+    try { if (Object.keys(edits).length) sessionStorage.setItem(k, JSON.stringify(edits)); else sessionStorage.removeItem(k); } catch { /* storage unavailable */ }
+  }
+
   /** Session SyncBase chosen on the SyncBase screen; used by the next plan of that profile (not the profile file). */
   sessionSyncBase(profile: string): string | null { try { return sessionStorage.getItem('harmony.syncBase.' + profile); } catch { return null; } }
   setSessionSyncBase(profile: string, sha: string | null) {
@@ -30,6 +44,8 @@ export class HarmonyApi {
 
 const enc = encodeURIComponent;
 
+ /** Query-parameter names are short on purpose: p = primary worktree id, f = fork worktree id. */
+export interface HarmonyState { profile?: string; p?: string; f?: string; plan?: string; row?: string; facet?: string; q?: string; }
 export type Decision = 'TakePrimary' | 'TakeFork' | 'Merged' | 'DeleteBoth' | 'KeepForkOnly' | 'KeepBoth' | 'ManifestUnion' | 'Manual';
 export interface ProfileInfo {
   name: string; valid: boolean; error?: string; hash?: string; syncBase?: string; scope?: string[]; code?: string;
