@@ -5,13 +5,14 @@ import {
   ProfileInfo, short, Worktree,
 } from './harmony-api';
 import { HARMONY_THEME } from './harmony-theme';
+import { WorktreeLookup } from './worktree-lookup';
 
 type DiffTab = 'base-primary' | 'base-fork' | 'primary-fork' | 'merged';
 interface ViewRow { row: AlignRow; eff: Decision; edited: boolean; leaf: string; dir: string; cat: string; }
 
 @Component({
   selector: 'fb-harmony',
-  imports: [RouterLink],
+  imports: [RouterLink, WorktreeLookup],
   styles: [HARMONY_THEME + `
     .sides { display: grid; grid-template-columns: repeat(auto-fit, minmax(300px, 1fr)); gap: 16px; }
     .side { display: flex; flex-direction: column; gap: 10px; border-top-width: 3px; }
@@ -83,9 +84,7 @@ interface ViewRow { row: AlignRow; eff: Decision; edited: boolean; leaf: string;
         <div class="panel pad side q">
           <div class="side-head"><span class="eyebrow" style="color: var(--h-qisl)">Primary</span><b style="color: var(--h-white)">{{ profile()?.primary?.label }}</b><span class="grow mono small faint">{{ profile()?.primary?.repo }}</span></div>
           <label class="lbl" for="pwt">Worktree ({{ primaryWts().length }} found)</label>
-          <select id="pwt" [value]="pwt() ?? ''" (change)="pwt.set($any($event.target).value)">
-            @for (w of primaryWts(); track w.id) { <option [value]="w.id" [selected]="w.id === pwt()">{{ wtLabel(w) }}</option> }
-          </select>
+          <fb-worktree-lookup inputId="pwt" [items]="primaryWts()" [value]="pwt()" (valueChange)="pwt.set($event)" />
           @if (selPrimary(); as w) {
             <div class="mono path">{{ w.path }}</div>
             <div class="flags">
@@ -111,9 +110,7 @@ interface ViewRow { row: AlignRow; eff: Decision; edited: boolean; leaf: string;
         <div class="panel pad side i">
           <div class="side-head"><span class="eyebrow" style="color: var(--h-isl)">Fork</span><b style="color: var(--h-white)">{{ profile()?.fork?.label }}</b><span class="grow mono small faint">{{ profile()?.fork?.repo }}</span></div>
           <label class="lbl" for="fwt">Worktree ({{ forkWts().length }} found)</label>
-          <select id="fwt" [value]="fwt() ?? ''" (change)="fwt.set($any($event.target).value)">
-            @for (w of forkWts(); track w.id) { <option [value]="w.id" [selected]="w.id === fwt()">{{ wtLabel(w) }}</option> }
-          </select>
+          <fb-worktree-lookup inputId="fwt" [items]="forkWts()" [value]="fwt()" (valueChange)="fwt.set($event)" />
           @if (selFork(); as w) {
             <div class="mono path">{{ w.path }}</div>
             <div class="flags">
@@ -537,7 +534,6 @@ export class HarmonyPage implements OnInit {
     return out;
   }
 
-  wtLabel(w: Worktree) { return `${w.branch ?? '(detached ' + short(w.head, 7) + ')'}   ·   ${w.path.split(/[\\/]/).slice(-2).join('\\')}`; }
   planLabel(p: PlanSummary) { return `${p.id}${p.parentPlanId ? ' (derived)' : ''}${p.preview ? ' (preview)' : ''} · ${p.rows} rows`; }
   title(n: string) { return n.charAt(0).toUpperCase() + n.slice(1); }
 }
