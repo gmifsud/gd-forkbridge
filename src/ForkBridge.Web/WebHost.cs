@@ -21,6 +21,7 @@ public sealed record WebOptions
     public int Port { get; init; } = 5178;
     public string? Token { get; init; }
     public string? WebRoot { get; init; }
+    public bool Verbose { get; init; }
 }
 
 /// <summary>Local web service. Security model:
@@ -49,7 +50,7 @@ public static class WebHost
             j.SerializerOptions.DefaultIgnoreCondition = System.Text.Json.Serialization.JsonIgnoreCondition.WhenWritingNull;
         });
         var app = builder.Build();
-        var jobs = new JobService();
+        var jobs = new JobService(o.Verbose);
 
         app.Use(async (ctx, next) =>
         {
@@ -79,8 +80,14 @@ public static class WebHost
                 { ctx.Response.StatusCode = 415; return; }
                 if (!HttpMethods.IsGet(ctx.Request.Method) && !HttpMethods.IsPost(ctx.Request.Method)) { ctx.Response.StatusCode = 405; return; }
             }
+            var sw = o.Verbose ? System.Diagnostics.Stopwatch.StartNew() : null;
             try { await next(); }
-            catch (Exception ex) { await WriteError(ctx, ex); }
+            catch (Exception ex) { await WriteError(ctx, ex, o.Verbose); }
+            finally
+            {
+                if (sw is not null && ctx.Request.Path.StartsWithSegments("/api") && !ctx.Request.Path.StartsWithSegments("/api/jobs"))
+                    Console.WriteLine($"[http] {ctx.Request.Method} {ctx.Request.Path}{ctx.Request.QueryString} -> {ctx.Response.StatusCode} ({sw.ElapsedMilliseconds}ms)");
+            }
         });
 
         app.UseDefaultFiles();
@@ -91,10 +98,11 @@ public static class WebHost
         return app;
     }
 
-    private static async Task WriteError(HttpContext ctx, Exception ex)
+    private static async Task WriteError(HttpContext ctx, Exception ex, bool verbose = false)
     {
         var (code, status) = ex switch
         {
+            ForkBridge.Core.Config.ConfigException => (ExitCodes.ConfigError, 400),
             PlanningException p => (p.ExitCode, 409),
             StaleException => (ExitCodes.Stale, 409),
             PlanIntegrityException => (ExitCodes.Stale, 409),
@@ -104,6 +112,8 @@ public static class WebHost
             ArgumentException => (ExitCodes.UsageError, 400),
             _ => (ExitCodes.Internal, 500),
         };
+        if (verbose)
+            Console.Error.WriteLine($"[error] {ctx.Request.Method} {ctx.Request.Path} -> HTTP {status} (exit {code}): {Redactor.Redact(ex.Message)}");
         ctx.Response.StatusCode = status;
         await ctx.Response.WriteAsJsonAsync(new { error = Redactor.Redact(ex.Message), exitCode = code });
     }
@@ -117,15 +127,58 @@ public static class WebHost
         api.MapGet("/config", () => new
         {
             e.Config.SourceFile, stateDir = e.Store.Root,
+            publish = e.Config.Publish,
             repositories = e.Config.Repositories.Select(r => new { alias = r.Key, r.Value.Path, r.Value.Kind, r.Value.Placeholder }),
             pairs = e.Config.Pairs.Select(p => new
             {
-                name = p.Key, products = p.Value.Products, defaults = p.Value.Defaults, directions = p.Value.Directions,
+                name = p.Key, products = p.Value.Products, defaults = p.Value.Products.Count > 0 ? p.Value.Defaults : p.Value.Defaults, directions = p.Value.Directions,
+                protectedBranches = p.Value.ProtectedBranches,
+                productSpecific = p.Value.ProductSpecific,
+                targetPinned = p.Value.TargetPinned,
+                ignored = p.Value.Ignored,
+                generated = p.Value.Generated,
                 components = p.Value.Components.Select(c => new { c.Id, c.Status, c.Paths, c.Absent, c.DependsOn, c.Description, c.Evidence }),
                 validationProfiles = p.Value.Validation.Select(v => new { name = v.Key, v.Value.Trusted, steps = v.Value.Steps.Select(s => new { s.Id, s.Kind, s.Required }) }),
             }),
             bundles = e.Config.Bundles.Keys,
         });
+
+        api.MapGet("/config/raw", () => new
+        {
+            sourceFile = e.Config.SourceFile,
+            yaml = !string.IsNullOrWhiteSpace(e.Config.SourceFile) && File.Exists(e.Config.SourceFile)
+                ? File.ReadAllText(e.Config.SourceFile)
+                : ForkBridge.Core.Config.ConfigLoader.ToYaml(e.Config),
+        });
+
+        api.MapPost("/config/raw", async (RawConfigBody b, CancellationToken ct) => await jobs.RunExclusiveAsync(_ =>
+        {
+            e.UpdateRawYaml(b.Yaml);
+            return Task.FromResult<object>(new { ok = true, sourceFile = e.Config.SourceFile });
+        }, ct));
+
+        api.MapPost("/config/reload", async (EmptyBody _, CancellationToken ct) => await jobs.RunExclusiveAsync(_ =>
+        {
+            e.ReloadConfig();
+            return Task.FromResult<object>(new { ok = true, sourceFile = e.Config.SourceFile });
+        }, ct));
+
+        api.MapPost("/config/policy-action", async (PolicyActionBody b, CancellationToken ct) => await jobs.RunExclusiveAsync(async token =>
+        {
+            e.ApplyPolicyAction(new ForkBridge.Core.Config.PolicyActionRequest
+            {
+                Pair = b.Pair, Action = b.Action, Product = b.Product, Patterns = b.Patterns ?? [],
+                ComponentId = b.ComponentId, Status = b.Status, ComponentPaths = b.ComponentPaths,
+                Profile = b.Profile, Trusted = b.Trusted, GeneratedAction = b.GeneratedAction,
+            });
+            Plan? updatedPlan = null;
+            if (!string.IsNullOrWhiteSpace(b.PlanId))
+            {
+                updatedPlan = await e.Planner.ResolvePlanAsync(Id(b.PlanId), new PlanResolutionRequest(), token);
+                await File.WriteAllTextAsync(Path.Combine(e.Store.PlanDir(updatedPlan.Id), "plan.md"), ReportWriter.PlanMarkdown(updatedPlan), token);
+            }
+            return (object)new { ok = true, plan = updatedPlan };
+        }, ct));
 
         api.MapGet("/pairs/{pair}/refs", async (string pair, string product) =>
         {
@@ -181,6 +234,7 @@ public static class WebHost
                 Pair = b.Pair, From = b.From, To = b.To, Mode = mode, SourceRef = Blank(b.SourceRef), SourceBase = Blank(b.SourceBase), TargetBase = Blank(b.TargetBase),
                 Range = Blank(b.Range), Commits = b.Commits ?? [], Components = b.Components ?? [], AllowProposed = b.AllowProposed, Offline = b.Offline,
                 PreferLocal = b.PreferLocal, Baseline = Blank(b.Baseline), Reapply = b.Reapply ?? [],
+                PathOverrides = b.PathOverrides ?? new(), OverriddenFindings = b.OverriddenFindings ?? [],
             }, ct);
             await File.WriteAllTextAsync(Path.Combine(e.Store.PlanDir(plan.Id), "plan.md"), ReportWriter.PlanMarkdown(plan), ct);
             return new { planId = plan.Id, status = plan.PreliminaryStatus };
@@ -189,6 +243,15 @@ public static class WebHost
         api.MapGet("/plans", () => e.Store.ListPlans().Take(100).Select(p => new { p.Id, p.Pair, p.FromProduct, p.ToProduct, p.Mode, p.PreliminaryStatus, p.CreatedAt, p.SourceRef, commits = p.Commits.Count }));
         api.MapGet("/plans/{id}", (string id) => e.Store.LoadPlan(Id(id)));
         api.MapGet("/plans/{id}/markdown", (string id) => Results.Text(ReportWriter.PlanMarkdown(e.Store.LoadPlan(Id(id))), "text/markdown"));
+        api.MapGet("/plans/{id}/file-diff", async (string id, string path, string? commit, CancellationToken ct) =>
+            await e.Planner.GetFileDiffAsync(Id(id), path, Blank(commit), ct));
+
+        api.MapPost("/plans/{id}/resolve", async (string id, PlanResolutionRequest b, CancellationToken ct) => await jobs.RunExclusiveAsync(async token =>
+        {
+            var plan = await e.Planner.ResolvePlanAsync(Id(id), b, token);
+            await File.WriteAllTextAsync(Path.Combine(e.Store.PlanDir(plan.Id), "plan.md"), ReportWriter.PlanMarkdown(plan), token);
+            return plan;
+        }, ct));
 
         api.MapPost("/plans/{id}/simulate", (string id, SimulateBody b) => jobs.Start($"simulate {id}", async ct =>
         {
@@ -218,6 +281,10 @@ public static class WebHost
             if (dir is null || !Directory.Exists(dir)) return Results.Ok(Array.Empty<object>());
             return Results.Ok(Directory.GetFiles(dir).Select(f => new { name = Path.GetFileName(f), content = File.ReadAllText(f) }));
         });
+        api.MapGet("/runs/{id}/conflict-files", async (string id, CancellationToken ct) =>
+            await e.Simulator.GetConflictDetailsAsync(Id(id), ct));
+        api.MapPost("/runs/{id}/resolve-conflict", async (string id, ConflictResolutionRequest b, CancellationToken ct) =>
+            await jobs.RunExclusiveAsync(token => e.Simulator.ResolveConflictFileAsync(Id(id), b, token), ct));
         api.MapPost("/runs/{id}/resume", (string id, SimulateBody b) => jobs.Start($"resume {id}", async ct =>
         {
             var run = await e.Simulator.ResumeAsync(Id(id), new SimulateOptions { TrustValidation = b.TrustValidation }, ct);
@@ -225,8 +292,8 @@ public static class WebHost
         }));
         api.MapPost("/runs/{id}/abort", (string id, EmptyBody _) => { var r = e.Abort(Id(id)); return new { r.Id, r.Status }; });
         api.MapPost("/runs/{id}/cleanup", (string id, EmptyBody _) => { e.Cleanup(Id(id)); return new { id, removed = true }; });
-        api.MapPost("/runs/{id}/approve", async (string id, ApproveBody b) =>
-            await e.Publisher.ApproveAsync(Id(id), b.Candidate, b.Accept ?? [], Environment.UserName + " (local UI)"));
+        api.MapPost("/runs/{id}/approve", async (string id, ApproveBody b, CancellationToken ct) =>
+            await e.Publisher.ApproveAsync(Id(id), b.Candidate, b.Accept ?? [], Environment.UserName + " (local UI)", ct, b.OverrideValidation));
         api.MapPost("/runs/{id}/publish", (string id, PublishBody b) => jobs.Start($"publish {id}", async ct => (object)await e.Publisher.PublishAsync(Id(id), b.CreatePr, ct)));
 
         api.MapGet("/bundles/{id}", (string id) => e.Store.LoadBundle(Id(id)));
@@ -247,15 +314,20 @@ public sealed record OfflineBody(bool Offline);
 public sealed record DiscoverBody(bool Fetch, int Depth = 2);
 public sealed record DriftBody(string Pair, string From, string To, bool Offline, bool AllowProposed);
 public sealed record PlanRequestBody(string Pair, string From, string To, string Mode, string? SourceRef, string? SourceBase, string? TargetBase,
-    string? Range, List<string>? Commits, List<string>? Components, bool AllowProposed, bool Offline, bool PreferLocal, string? Baseline, List<string>? Reapply);
+    string? Range, List<string>? Commits, List<string>? Components, bool AllowProposed, bool Offline, bool PreferLocal, string? Baseline, List<string>? Reapply,
+    Dictionary<string, Decision>? PathOverrides = null, List<string>? OverriddenFindings = null);
 public sealed record SimulateBody(bool TrustValidation, string? Profile, bool PreserveWorkspace);
-public sealed record ApproveBody(string Candidate, List<string>? Accept);
+public sealed record ApproveBody(string Candidate, List<string>? Accept, bool OverrideValidation = false);
 public sealed record PublishBody(bool CreatePr);
 public sealed record BundleBody(List<string> Plans, string? Name);
+public sealed record RawConfigBody(string Yaml);
+public sealed record PolicyActionBody(string Pair, string Action, string? Product = null, List<string>? Patterns = null,
+    string? ComponentId = null, string? Status = null, Dictionary<string, string?>? ComponentPaths = null,
+    string? Profile = null, bool? Trusted = null, string? GeneratedAction = null, string? PlanId = null);
 
 /// <summary>Background jobs with cancellation. Engine operations are serialized: one git-mutating
 /// operation at a time against the harness mirrors.</summary>
-public sealed class JobService
+public sealed class JobService(bool verbose = false)
 {
     public sealed record Job
     {
@@ -280,8 +352,18 @@ public sealed class JobService
         _ = Task.Run(async () =>
         {
             await _gate.WaitAsync();
-            try { job.Result = await work(job.Cts.Token); job.State = "succeeded"; }
-            catch (OperationCanceledException) { job.State = "cancelled"; job.ExitCode = ExitCodes.Cancelled; }
+            if (verbose) Console.WriteLine($"[job] START {job.Id} ({kind})");
+            try
+            {
+                job.Result = await work(job.Cts.Token);
+                job.State = "succeeded";
+                if (verbose) Console.WriteLine($"[job] DONE  {job.Id} ({kind}) in {(DateTimeOffset.UtcNow - job.StartedAt).TotalSeconds:F1}s");
+            }
+            catch (OperationCanceledException)
+            {
+                job.State = "cancelled"; job.ExitCode = ExitCodes.Cancelled;
+                if (verbose) Console.WriteLine($"[job] CANCELLED {job.Id} ({kind})");
+            }
             catch (Exception ex)
             {
                 job.State = "failed"; job.Error = Redactor.Redact(ex.Message);
@@ -290,10 +372,18 @@ public sealed class JobService
                     PlanningException p => p.ExitCode, StaleException or PlanIntegrityException => ExitCodes.Stale,
                     PublishRefusedException p => p.ExitCode, FreshnessException => ExitCodes.FetchFailed, HarnessSafetyException => ExitCodes.Safety, _ => ExitCodes.Internal,
                 };
+                if (verbose) Console.Error.WriteLine($"[job] FAIL  {job.Id} ({kind}) exit {job.ExitCode}: {job.Error}");
             }
             finally { job.FinishedAt = DateTimeOffset.UtcNow; _gate.Release(); }
         });
         return new { jobId = job.Id };
+    }
+
+    public async Task<T> RunExclusiveAsync<T>(Func<CancellationToken, Task<T>> work, CancellationToken ct = default)
+    {
+        await _gate.WaitAsync(ct);
+        try { return await work(ct); }
+        finally { _gate.Release(); }
     }
 
     public Job? Get(string id) => _jobs.GetValueOrDefault(id);

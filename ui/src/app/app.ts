@@ -12,6 +12,7 @@ import { Api } from './api';
         <a routerLink="/" routerLinkActive="on" [routerLinkActiveOptions]="{ exact: true }">New plan</a>
         <a routerLink="/runs" routerLinkActive="on">History</a>
         <a routerLink="/discover" routerLinkActive="on">Discovery</a>
+        <a routerLink="/policy" routerLinkActive="on">Policy & Config</a>
         <a routerLink="/harmony" routerLinkActive="on">Harmony</a>
       </nav>
       <span class="local">local · loopback only</span>

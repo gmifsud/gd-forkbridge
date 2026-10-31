@@ -1,0 +1,21 @@
+<Project>
+  <!--
+    ISL fork-only module codes. Appended at build time to the upstream ModuleTypes enums
+    (QiSL.Platform.SharedKernel.Domain and QiSL.App.BaseTemplate.Core.Shared) by
+    IslComposeModuleTypes in ../Directory.Build.targets. The upstream files are never edited.
+
+    To add an ISL module: add one line with the next free Value (1000+). No Backend change needed.
+
+    Rules (ISL modules consume the enum through lib/*.dll; enum values are compiled into callers as numbers):
+      - Include (the name) is persisted as the LobModule code: never rename or remove one that has shipped.
+      - Value is fixed for ever: never change or reuse it. The 1000+ range cannot collide with upstream's
+        implicit 0..n values, so upstream adding modules never shifts these.
+  -->
+  <ItemGroup>
+    <IslModuleType Include="SALESPORTAL" Value="1000" />
+    <IslModuleType Include="WRH"         Value="1001" />
+    <IslModuleType Include="EYECONNECT"  Value="1002" />
+    <IslModuleType Include="MTL"         Value="1003" />
+    <IslModuleType Include="CUSTOMER"    Value="1004" />
+  </ItemGroup>
+</Project>

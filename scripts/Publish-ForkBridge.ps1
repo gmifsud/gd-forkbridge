@@ -30,6 +30,12 @@ $out = [IO.Path]::GetFullPath($Output)
 dotnet publish (Join-Path $repo 'src/ForkBridge.Cli') '-c' $Configuration '-o' $out
 if (-not $SkipWeb) {
     dotnet publish (Join-Path $repo 'src/ForkBridge.Web') '-c' $Configuration '-o' $out
+    $srcCfg = Join-Path $repo 'src/ForkBridge.Web/forkbridge.yml'
+    $dstCfg = Join-Path $out 'forkbridge.yml'
+    if ((Test-Path $srcCfg) -and -not (Test-Path $dstCfg)) {
+        Copy-Item $srcCfg $dstCfg
+        Write-Host "Copied default config to $dstCfg"
+    }
 }
 
 function Normalize-PathEntry([string]$entry) {

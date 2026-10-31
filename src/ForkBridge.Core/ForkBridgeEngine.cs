@@ -15,33 +15,165 @@ namespace ForkBridge.Core;
 /// <summary>Single entry point shared by the CLI and the web UI.</summary>
 public sealed class ForkBridgeEngine
 {
-    public ForkBridgeConfig Config { get; }
+    private readonly IProcessRunner _runner;
+    private readonly IPullRequestProvider? _customPrProvider;
+
+    public ForkBridgeConfig Config { get; private set; } = null!;
     public GitClient Git { get; }
     public StateStore Store { get; }
-    public MirrorManager Mirrors { get; }
-    public Planner Planner { get; }
-    public Simulator Simulator { get; }
-    public Publisher Publisher { get; }
-    public DiscoveryService Discovery { get; }
+    public MirrorManager Mirrors { get; private set; } = null!;
+    public Planner Planner { get; private set; } = null!;
+    public Simulator Simulator { get; private set; } = null!;
+    public Publisher Publisher { get; private set; } = null!;
+    public DiscoveryService Discovery { get; private set; } = null!;
 
     public ForkBridgeEngine(ForkBridgeConfig cfg, IProcessRunner? runner = null, string gitExe = "git", IPullRequestProvider? prProvider = null)
     {
-        Config = cfg;
-        runner ??= new ProcessRunner();
-        Git = new GitClient(runner, gitExe);
+        _runner = runner ?? new ProcessRunner();
+        _customPrProvider = prProvider;
+        Git = new GitClient(_runner, gitExe);
         Store = new StateStore(cfg.StateRoot);
+        ApplyConfigInstance(cfg);
+    }
+
+    private void ApplyConfigInstance(ForkBridgeConfig cfg)
+    {
         foreach (var (alias, repo) in cfg.Repositories.Where(r => !r.Value.Placeholder))
         {
             var p = cfg.ResolvePath(repo.Path);
             if (Store.Fs.IsInsideRoot(p) || IsInside(cfg.StateRoot, p))
                 throw new HarnessSafetyException($"State directory '{cfg.StateRoot}' must not be inside or contain repository '{alias}' ({p}).");
         }
+        Config = cfg;
         Mirrors = new MirrorManager(Git, Store, cfg);
         Planner = new Planner(cfg, Git, Store, Mirrors);
-        Simulator = new Simulator(cfg, Git, Store, Mirrors, new ValidationRunner(runner));
-        prProvider ??= cfg.Publish.Provider == "azure-devops" ? new AzureDevOpsPullRequestProvider(Git, Store.Root) : null;
+        Simulator = new Simulator(cfg, Git, Store, Mirrors, new ValidationRunner(_runner));
+        var prProvider = _customPrProvider ?? (cfg.Publish.Provider == "azure-devops" ? new AzureDevOpsPullRequestProvider(Git, Store.Root) : null);
         Publisher = new Publisher(cfg, Git, Store, Simulator, prProvider);
         Discovery = new DiscoveryService(cfg, Git, Store, Mirrors);
+    }
+
+    public ForkBridgeConfig ReloadConfig()
+    {
+        if (string.IsNullOrWhiteSpace(Config.SourceFile)) return Config;
+        var reloaded = ConfigLoader.Load(Config.SourceFile);
+        ApplyConfigInstance(reloaded);
+        return Config;
+    }
+
+    public ForkBridgeConfig UpdateRawYaml(string yaml)
+    {
+        var updated = ConfigLoader.SaveRawYaml(yaml, Config.SourceFile);
+        ApplyConfigInstance(updated);
+        return Config;
+    }
+
+    public ForkBridgeConfig ApplyPolicyAction(PolicyActionRequest req)
+    {
+        if (!Config.Pairs.TryGetValue(req.Pair, out var pair))
+            throw new ConfigException($"Unknown pair '{req.Pair}'.");
+        var products = string.IsNullOrWhiteSpace(req.Product) || req.Product.Equals("both", StringComparison.OrdinalIgnoreCase)
+            ? pair.Products.Keys.ToList()
+            : [req.Product];
+        var cleanPatterns = req.Patterns.Where(p => !string.IsNullOrWhiteSpace(p)).Select(p => p.Trim()).Distinct(StringComparer.Ordinal).ToList();
+
+        switch (req.Action)
+        {
+            case "add-ignored":
+                foreach (var pat in cleanPatterns)
+                    if (!pair.Ignored.Contains(pat, StringComparer.Ordinal)) pair.Ignored.Add(pat);
+                break;
+            case "remove-ignored":
+                pair.Ignored.RemoveAll(p => cleanPatterns.Contains(p, StringComparer.Ordinal));
+                break;
+            case "add-product-specific":
+                foreach (var prod in products)
+                {
+                    if (!pair.ProductSpecific.TryGetValue(prod, out var list))
+                        pair.ProductSpecific[prod] = list = new List<string>();
+                    foreach (var pat in cleanPatterns)
+                        if (!list.Contains(pat, StringComparer.Ordinal)) list.Add(pat);
+                }
+                break;
+            case "remove-product-specific":
+                foreach (var prod in products)
+                    if (pair.ProductSpecific.TryGetValue(prod, out var list))
+                        list.RemoveAll(p => cleanPatterns.Contains(p, StringComparer.Ordinal));
+                break;
+            case "add-target-pinned":
+                foreach (var prod in products)
+                {
+                    if (!pair.TargetPinned.TryGetValue(prod, out var list))
+                        pair.TargetPinned[prod] = list = new List<string>();
+                    foreach (var pat in cleanPatterns)
+                        if (!list.Contains(pat, StringComparer.Ordinal)) list.Add(pat);
+                }
+                break;
+            case "remove-target-pinned":
+                foreach (var prod in products)
+                    if (pair.TargetPinned.TryGetValue(prod, out var list))
+                        list.RemoveAll(p => cleanPatterns.Contains(p, StringComparer.Ordinal));
+                break;
+            case "set-component-status":
+                if (req.ComponentId == "*")
+                {
+                    foreach (var comp in pair.Components.Where(c => c.Status == "proposed"))
+                        comp.Status = req.Status ?? "confirmed";
+                }
+                else
+                {
+                    var comp = pair.Components.FirstOrDefault(c => c.Id == req.ComponentId)
+                               ?? throw new ConfigException($"Unknown component '{req.ComponentId}' in pair '{req.Pair}'.");
+                    comp.Status = req.Status ?? "confirmed";
+                }
+                break;
+            case "upsert-component":
+                if (string.IsNullOrWhiteSpace(req.ComponentId)) throw new ConfigException("componentId is required.");
+                var existing = pair.Components.FirstOrDefault(c => c.Id == req.ComponentId);
+                if (existing is null)
+                {
+                    existing = new ComponentConfig { Id = req.ComponentId, Status = req.Status ?? "confirmed" };
+                    pair.Components.Add(existing);
+                }
+                else if (!string.IsNullOrWhiteSpace(req.Status))
+                {
+                    existing.Status = req.Status;
+                }
+                if (req.ComponentPaths is not null)
+                {
+                    foreach (var (k, v) in req.ComponentPaths) existing.Paths[k] = v;
+                }
+                break;
+            case "set-validation-trusted":
+                var profName = string.IsNullOrWhiteSpace(req.Profile) ? pair.Defaults.ValidationProfile : req.Profile;
+                if (!pair.Validation.TryGetValue(profName, out var prof))
+                    throw new ConfigException($"Unknown validation profile '{profName}' in pair '{req.Pair}'.");
+                prof.Trusted = req.Trusted ?? true;
+                break;
+            case "set-generated-rule":
+                var gAction = req.GeneratedAction ?? "exclude";
+                foreach (var pat in cleanPatterns)
+                {
+                    var g = pair.Generated.FirstOrDefault(x => x.Pattern == pat);
+                    if (g is null) pair.Generated.Add(new GeneratedRule { Pattern = pat, Action = gAction });
+                    else g.Action = gAction;
+                }
+                break;
+            default:
+                throw new ConfigException($"Unsupported policy action '{req.Action}'.");
+        }
+
+        if (!string.IsNullOrWhiteSpace(Config.SourceFile) && File.Exists(Config.SourceFile) &&
+            ConfigLoader.TryApplyPolicyActionInPlace(File.ReadAllText(Config.SourceFile), req, pair, out var updatedYaml))
+        {
+            var saved = ConfigLoader.SaveRawYaml(updatedYaml, Config.SourceFile);
+            ApplyConfigInstance(saved);
+            return Config;
+        }
+
+        ConfigLoader.Save(Config);
+        ApplyConfigInstance(ConfigLoader.Load(Config.SourceFile));
+        return Config;
     }
 
     public static ForkBridgeEngine Load(string configPath, IProcessRunner? runner = null) => new(ConfigLoader.Load(configPath), runner);
