@@ -19,6 +19,8 @@ public sealed record AlignDecisionsBody(Dictionary<string, string> Edits);
 public sealed record AlignAdviseBody(string? PrimaryWorktreeId, string? ForkWorktreeId, string? PrimaryRev, string? ForkRev, string? PlanId, int? RevertWeight, int? MergeWeight, int? ConflictWeight);
 public sealed record AlignSyncBaseBody(string Sha, string? Note);
 public sealed record AlignOverrideBody(string Pattern, string Decision, string? Reason);
+public sealed record AlignCreateWorktreeBody(string Side, string Branch);
+public sealed record AlignFastForwardBody(bool ConfirmMainCheckout);
 
 /// <summary>/api/align/* - the Harmony screens. Same security model as the rest of the API (loopback, per-launch
 /// token, JSON-only POSTs); inputs are profile names, worktree ids, plan ids, row paths that exist in a plan and
@@ -35,6 +37,14 @@ public static class AlignmentEndpoints
         ResolvedProfile Profile(string name)
             => AlignmentConfigLoader.Resolve(AlignmentConfigLoader.Load(AlignConfigPath()), ConfigLoader.Load(forkBridgeConfigPath), StateStore.Sanitize(name));
         string Code(ResolvedProfile p) => new AlignmentPlanner(p, git).PrimaryCode;
+        WorktreeOps Ops(ResolvedProfile p)
+        {
+            var fb = ConfigLoader.Load(forkBridgeConfigPath);
+            return new WorktreeOps(p, git, side => fb.Repositories[p.SideOf(side).Repo].Remote);
+        }
+        static string WtRoot(string configured, string root) => string.IsNullOrWhiteSpace(configured) ? root.TrimEnd('/', '\\') + ".worktrees" : configured;
+        static Side SideOf(string s) => Enum.TryParse<Side>(s, ignoreCase: true, out var v) && Enum.IsDefined(v)
+            ? v : throw new ArgumentException("side must be Primary or Fork.");
 
         api.MapGet("/profiles", () => Guard(() =>
         {
@@ -50,8 +60,10 @@ public static class AlignmentEndpoints
                     return (object)new
                     {
                         name = n, valid = true, hash = r.Hash, syncBase = r.Profile.SyncBase, scope = r.Profile.Scope, code = Code(r),
-                        primary = new { label = r.Profile.Primary.Label, repo = r.Profile.Primary.Repo, root = r.PrimaryRoot, plannedBranch = r.Profile.Primary.Session.NewBranch },
-                        fork = new { label = r.Profile.Fork.Label, repo = r.Profile.Fork.Repo, root = r.ForkRoot, plannedBranch = r.Profile.Fork.Session.NewBranch },
+                        primary = new { label = r.Profile.Primary.Label, repo = r.Profile.Primary.Repo, root = r.PrimaryRoot, plannedBranch = r.Profile.Primary.Session.NewBranch,
+                            worktreeRoot = WtRoot(r.Profile.Primary.WorktreeRoot, r.PrimaryRoot), remote = fb.Repositories[r.Profile.Primary.Repo].Remote },
+                        fork = new { label = r.Profile.Fork.Label, repo = r.Profile.Fork.Repo, root = r.ForkRoot, plannedBranch = r.Profile.Fork.Session.NewBranch,
+                            worktreeRoot = WtRoot(r.Profile.Fork.WorktreeRoot, r.ForkRoot), remote = fb.Repositories[r.Profile.Fork.Repo].Remote },
                         neverPush = r.Profile.NeverPush, weights = r.Profile.Advisor,
                     };
                 }
@@ -62,6 +74,28 @@ public static class AlignmentEndpoints
 
         api.MapGet("/{profile}/worktrees", (string profile, CancellationToken ct) => GuardAsync(async () =>
             Results.Ok(await new WorktreeCatalog(Profile(profile), git).ListAsync(inspect: true, ct))));
+
+        // ---- Worktree maintenance: the only repository writes before phase 4 (fetch, add worktree, fast-forward).
+        api.MapGet("/{profile}/remote/{side}/branches", (string profile, string side, CancellationToken ct) => GuardAsync(async () =>
+            Results.Ok(await Ops(Profile(profile)).ListRemoteBranchesAsync(SideOf(side), ct))));
+
+        api.MapPost("/{profile}/remote/{side}/fetch", (string profile, string side) => Guard(() =>
+        {
+            var p = Profile(profile); var sd = SideOf(side);
+            return Results.Ok(jobs.Start($"align fetch {p.Name} {sd}", async ct => await Ops(p).FetchAsync(sd, ct)));
+        }));
+
+        api.MapPost("/{profile}/worktrees/create", (string profile, AlignCreateWorktreeBody b) => Guard(() =>
+        {
+            var p = Profile(profile); var sd = SideOf(b.Side);
+            return Results.Ok(jobs.Start($"align worktree add {p.Name} {sd}", async ct => await Ops(p).CreateWorktreeAsync(sd, b.Branch, ct)));
+        }));
+
+        api.MapPost("/{profile}/worktrees/{id}/fast-forward", (string profile, string id, AlignFastForwardBody b) => Guard(() =>
+        {
+            var p = Profile(profile); var wid = StateStore.Sanitize(id);
+            return Results.Ok(jobs.Start($"align fast-forward {p.Name}", async ct => await Ops(p).FastForwardAsync(wid, b.ConfirmMainCheckout, ct)));
+        }));
 
         api.MapPost("/{profile}/plan", (string profile, AlignPlanBody b) => Guard(() =>
         {

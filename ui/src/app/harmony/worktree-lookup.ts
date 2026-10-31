@@ -1,9 +1,12 @@
 import { Component, computed, ElementRef, input, output, signal, viewChild } from '@angular/core';
-import { short, Worktree } from './harmony-api';
+import { RemoteBranch, short, Worktree } from './harmony-api';
+
+type Opt = { kind: 'wt'; w: Worktree } | { kind: 'remote'; b: RemoteBranch };
 
 /** Searchable worktree picker (WAI-ARIA combobox + listbox). Every whitespace-separated term must match the branch,
  *  path or HEAD, so "24326 angular" or "wt-3 fix" narrows hundreds of worktrees quickly. Keyboard: ↑/↓, PgUp/PgDn,
- *  Home/End, Enter to pick, Esc to cancel. */
+ *  Home/End, Enter to pick, Esc to cancel. Branches on the remote that have no worktree yet are listed after the
+ *  worktrees; picking one asks the host to create a worktree for it (the host confirms first). */
 @Component({
   selector: 'fb-worktree-lookup',
   styles: [`
@@ -30,24 +33,27 @@ import { short, Worktree } from './harmony-api';
     .t.prot { color: var(--bad); border-color: rgba(248,113,113,.45); } .t.miss { color: var(--bad); border-color: rgba(248,113,113,.45); }
     :host ::ng-deep mark { background: rgba(249,115,22,.30); color: var(--accent-soft); border-radius: 2px; }   /* innerHTML is outside view encapsulation */
     .empty { padding: 10px; font-size: 12px; color: var(--muted); }
+    li.hdr { cursor: default; flex-direction: row; justify-content: space-between; padding: 8px 10px 4px; font-size: 11px; font-weight: 700; letter-spacing: .5px; color: var(--faint); border-top: 1px solid var(--line2); margin-top: 4px; border-radius: 0; }
+    .t.origin { color: var(--accent-ink); border-color: rgba(249,115,22,.45); }
+    .t.local { color: var(--ink3); }
   `],
   template: `
     <div class="box" (click)="fieldEl.focus()">
       <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><circle cx="11" cy="11" r="7"/><path d="m20 20-3.5-3.5"/></svg>
       <input #fieldEl [id]="inputId()" type="text" role="combobox" autocomplete="off" spellcheck="false"
         [attr.aria-expanded]="open()" [attr.aria-controls]="inputId() + '-list'" aria-autocomplete="list"
-        [attr.aria-activedescendant]="open() && matches().length ? inputId() + '-opt-' + active() : null"
-        [placeholder]="selected() ? display(selected()!) : 'Search branch, path or HEAD…'"
+        [attr.aria-activedescendant]="open() && opts().length ? inputId() + '-opt-' + active() : null"
+        [placeholder]="selected() ? display(selected()!) : 'Search worktrees and ' + remoteName() + ' branches…'"
         [value]="open() ? query() : (selected() ? display(selected()!) : '')"
         (focus)="openList()" (input)="onInput($any($event.target).value)" (keydown)="onKey($event)" (blur)="close()">
-      @if (open()) { <span class="count">{{ matches().length }} / {{ items().length }}</span> }
+      @if (open()) { <span class="count" [title]="remoteMatches().length + ' ' + remoteName() + ' branch(es) without a worktree'">{{ matches().length }} / {{ items().length }}@if (remote().length) { · +{{ remoteMatches().length }} }</span> }
       @if (open() && query()) { <button type="button" class="clear" aria-label="Clear search" (mousedown)="$event.preventDefault(); onInput('')">×</button> }
     </div>
     @if (open()) {
       <ul [id]="inputId() + '-list'" role="listbox" #list>
         @for (w of matches(); track w.id; let i = $index) {
           <li role="option" [id]="inputId() + '-opt-' + i" [class.active]="i === active()" [class.sel]="w.id === value()" [attr.aria-selected]="w.id === value()"
-            (mousedown)="$event.preventDefault(); pick(w)" (mousemove)="active.set(i)">
+            (mousedown)="$event.preventDefault(); choose(i)" (mousemove)="active.set(i)">
             <span class="row1">
               <span class="br" [innerHTML]="hl(w.branch ?? '(detached ' + short(w.head, 7) + ')')"></span>
               <span class="meta">
@@ -62,6 +68,19 @@ import { short, Worktree } from './harmony-api';
           </li>
         }
         @if (matches().length === 0) { <li class="empty" aria-disabled="true">No worktree matches “{{ query() }}”.</li> }
+        @if (remoteMatches().length) {
+          <li class="hdr" role="presentation"><span>ON {{ remoteName().toUpperCase() }} · NO WORKTREE YET</span><span>{{ remoteShown().length }}@if (remoteMatches().length > remoteShown().length) { of {{ remoteMatches().length }} — type to narrow }</span></li>
+          @for (b of remoteShown(); track b.name; let j = $index) {
+            <li role="option" [id]="inputId() + '-opt-' + (matches().length + j)" [class.active]="matches().length + j === active()" aria-selected="false"
+              (mousedown)="$event.preventDefault(); choose(matches().length + j)" (mousemove)="active.set(matches().length + j)">
+              <span class="row1">
+                <span class="br" [innerHTML]="hl(b.name)"></span>
+                <span class="meta">@if (b.localExists) { <span class="t local">LOCAL BRANCH</span> }<span class="t origin">+ CREATE WORKTREE</span></span>
+              </span>
+              <span class="p" style="direction: ltr">{{ short(b.sha) }} · {{ b.date }} · {{ b.author }} · {{ b.subject }}</span>
+            </li>
+          }
+        }
       </ul>
     }
   `,
@@ -71,6 +90,10 @@ export class WorktreeLookup {
   readonly value = input<string | null>(null);
   readonly inputId = input.required<string>();
   readonly valueChange = output<string>();
+  /** Remote branches that have no worktree on this side (the host filters them). */
+  readonly remote = input<RemoteBranch[]>([]);
+  readonly remoteName = input('origin');
+  readonly createRequest = output<RemoteBranch>();
   readonly short = short;
 
   readonly field = viewChild.required<ElementRef<HTMLInputElement>>('fieldEl');
@@ -89,6 +112,21 @@ export class WorktreeLookup {
       return t.every((x) => hay.includes(x));
     });
   });
+
+  readonly remoteMatches = computed(() => {
+    const t = this.terms();
+    return t.length ? this.remote().filter((b) => t.every((x) => `${b.name} ${b.sha} ${b.author} ${b.subject}`.toLowerCase().includes(x))) : this.remote();
+  });
+  /** Capped so an unfiltered list of hundreds of remote branches stays fast; typing narrows it. */
+  readonly remoteShown = computed(() => this.remoteMatches().slice(0, 60));
+  readonly opts = computed<Opt[]>(() => [...this.matches().map((w) => ({ kind: 'wt' as const, w })), ...this.remoteShown().map((b) => ({ kind: 'remote' as const, b }))]);
+
+  choose(i: number) {
+    const o = this.opts()[i]; if (!o) return;
+    if (o.kind === 'wt') { this.pick(o.w); return; }
+    this.close(); this.field().nativeElement.blur();
+    this.createRequest.emit(o.b);
+  }
 
   display(w: Worktree) { return `${w.branch ?? '(detached ' + short(w.head, 7) + ')'}  ·  ${w.path.split(/[\\/]/).slice(-2).join('\\')}`; }
 
@@ -112,7 +150,7 @@ export class WorktreeLookup {
   }
 
   onKey(e: KeyboardEvent) {
-    const n = this.matches().length;
+    const n = this.opts().length;
     const move = (i: number) => { e.preventDefault(); if (!this.open()) this.openList(); this.active.set(Math.max(0, Math.min(n - 1, i))); this.scrollActive(); };
     switch (e.key) {
       case 'ArrowDown': return move(this.open() ? this.active() + 1 : this.active());
@@ -121,7 +159,7 @@ export class WorktreeLookup {
       case 'PageUp': return move(this.active() - 8);
       case 'Home': if (this.open()) move(0); return;
       case 'End': if (this.open()) move(n - 1); return;
-      case 'Enter': { e.preventDefault(); const w = this.matches()[this.active()]; if (this.open() && w) this.pick(w); else this.openList(); return; }
+      case 'Enter': { e.preventDefault(); if (this.open() && n) this.choose(this.active()); else this.openList(); return; }
       case 'Escape': if (this.open()) { e.preventDefault(); this.close(); } return;
       case 'Tab': this.close(); return;
     }

@@ -89,5 +89,17 @@ matched to the closest primary state, and fully simulated candidates scored
 profile's `syncBase` line (previous value kept as a comment, `.bak` written). Set `ledger:` on a profile to
 add `sync-ledger.json` entries as candidates.
 
+### Worktree maintenance
+
+The only repository writes before phase 4. Each is additive or fast-forward only, and confirmed inline first.
+
+| Action | Where | What it does | Refused (nothing changed) when |
+|---|---|---|---|
+| **Fetch** | side card | `git fetch --no-tags <remote>`: remote-tracking refs only, no prune; refreshes behind counts and the remote branch list | - |
+| **Create worktree** | search box → "On origin · no worktree yet" | `git worktree add` under the side's `worktreeRoot` (`<worktreeRoot>/<branch>`); creates a local branch tracking the remote one, or reuses an existing local branch. Idempotent | name rejected by `git check-ref-format`, branch not on the remote, target folder not empty |
+| **Update to origin** | side card | fetches that branch, then `git merge --ff-only` to its upstream | detached/missing worktree, uncommitted tracked changes, local commits not on the remote, main checkout without the extra tick |
+
+`worktreeRoot` defaults to `<repo>.worktrees` when not set. The remote name comes from `forkbridge.yml`.
+
 API: `/api/align/*` - same loopback + token model as the rest of the API. Inputs are profile names, worktree
 ids, plan ids, row paths of a plan and hex commit ids; blobs are served only when the plan references them.

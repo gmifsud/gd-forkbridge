@@ -1,12 +1,13 @@
 import { Component, computed, effect, inject, OnInit, signal, untracked } from '@angular/core';
 import { ActivatedRoute, Router, RouterLink } from '@angular/router';
 import {
-  AlignPlan, AlignRow, Blob, categoryLabel, Decision, DECISIONS, decisionInfo, DiffLine, HarmonyApi, HarmonyState, lineDiff, PlanSummary,
+  AlignPlan, AlignRow, Blob, categoryLabel, Decision, DECISIONS, decisionInfo, DiffLine, HarmonyApi, HarmonyState, lineDiff, PlanSummary, RemoteBranch,
   ProfileInfo, short, Worktree,
 } from './harmony-api';
 import { HARMONY_THEME } from './harmony-theme';
 import { WorktreeLookup } from './worktree-lookup';
 
+type Side = 'Primary' | 'Fork';
 type DiffTab = 'base-primary' | 'base-fork' | 'primary-fork' | 'merged';
 interface ViewRow { row: AlignRow; eff: Decision; edited: boolean; leaf: string; dir: string; cat: string; }
 
@@ -20,6 +21,10 @@ interface ViewRow { row: AlignRow; eff: Decision; edited: boolean; leaf: string;
     .side-head { display: flex; align-items: center; gap: 8px; }
     .path { font-size: 12px; color: var(--h-ink3); word-break: break-all; }
     .flags { display: flex; flex-wrap: wrap; gap: 6px; }
+    .wt-tools { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; }
+    button.btn.sm { min-height: 30px; padding: 0 10px; font-size: 12px; }
+    .behind { margin-left: 4px; font-weight: 700; color: var(--h-accent-soft); }
+    .confirm { display: flex; flex-direction: column; gap: 6px; }
     .steps { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; }
     .step { display: inline-flex; align-items: center; gap: 8px; min-height: 36px; padding: 0 12px 0 6px; border-radius: 999px; font-size: 13px; border: 1px solid var(--h-ctl); color: var(--h-ink); background: var(--h-panel); }
     .step .dot { display: inline-flex; align-items: center; justify-content: center; width: 24px; height: 24px; border-radius: 50%; font-size: 12px; font-weight: 700; background: rgba(45,212,191,.18); color: var(--h-ok); }
@@ -84,7 +89,25 @@ interface ViewRow { row: AlignRow; eff: Decision; edited: boolean; leaf: string;
         <div class="panel pad side q">
           <div class="side-head"><span class="eyebrow" style="color: var(--h-qisl)">Primary</span><b style="color: var(--h-white)">{{ profile()?.primary?.label }}</b><span class="grow mono small faint">{{ profile()?.primary?.repo }}</span></div>
           <label class="lbl" for="pwt">Worktree ({{ primaryWts().length }} found)</label>
-          <fb-worktree-lookup inputId="pwt" [items]="primaryWts()" [value]="pwt()" (valueChange)="pwt.set($event)" />
+          <fb-worktree-lookup inputId="pwt" [items]="primaryWts()" [value]="pwt()" (valueChange)="pwt.set($event)"
+            [remote]="remoteWithoutWt('Primary')" [remoteName]="remoteOf('Primary')" (createRequest)="askCreate('Primary', $event)" />
+          <div class="wt-tools">
+            <button type="button" class="btn sm" (click)="fetchRemote('Primary')" [disabled]="!!busy()" [title]="'git fetch ' + remoteOf('Primary') + ' (remote-tracking refs only)'">⟳ Fetch {{ remoteOf('Primary') }}</button>
+            @if (selPrimary(); as w) {
+              <button type="button" class="btn sm" (click)="askFastForward('Primary', w)" [disabled]="!!busy() || w.detached || !w.exists"
+                [title]="'Fetch ' + (w.branch ?? '') + ' and fast-forward this worktree to ' + remoteOf('Primary')">⇣ Update to {{ remoteOf('Primary') }}@if (w.behind) { <span class="behind">↓{{ w.behind }}</span> }</button>
+            }
+            <span class="small faint grow">{{ remoteCount('Primary') }} {{ remoteOf('Primary') }} branch(es) without a worktree</span>
+          </div>
+          @if (confirm(); as c) { @if (c.side === 'Primary') {
+            <div class="note accent confirm" role="alertdialog" [attr.aria-label]="c.title">
+              <b style="color: var(--h-accent-soft)">{{ c.title }}</b>
+              <div class="small">{{ c.detail }}</div>
+              @if (c.main) { <label class="small"><input type="checkbox" [checked]="confirmMain()" (change)="confirmMain.set($any($event.target).checked)" style="min-height: auto"> This is the main checkout — fast-forward it anyway</label> }
+              <div class="bar" style="gap: 8px"><button type="button" class="btn sm" (click)="confirm.set(null)">Cancel</button>
+                <button type="button" class="btn sm primary" (click)="runConfirmed()" [disabled]="!!busy() || (c.main && !confirmMain())">{{ c.action }}</button></div>
+            </div>
+          } }
           @if (selPrimary(); as w) {
             <div class="mono path">{{ w.path }}</div>
             <div class="flags">
@@ -110,7 +133,25 @@ interface ViewRow { row: AlignRow; eff: Decision; edited: boolean; leaf: string;
         <div class="panel pad side i">
           <div class="side-head"><span class="eyebrow" style="color: var(--h-isl)">Fork</span><b style="color: var(--h-white)">{{ profile()?.fork?.label }}</b><span class="grow mono small faint">{{ profile()?.fork?.repo }}</span></div>
           <label class="lbl" for="fwt">Worktree ({{ forkWts().length }} found)</label>
-          <fb-worktree-lookup inputId="fwt" [items]="forkWts()" [value]="fwt()" (valueChange)="fwt.set($event)" />
+          <fb-worktree-lookup inputId="fwt" [items]="forkWts()" [value]="fwt()" (valueChange)="fwt.set($event)"
+            [remote]="remoteWithoutWt('Fork')" [remoteName]="remoteOf('Fork')" (createRequest)="askCreate('Fork', $event)" />
+          <div class="wt-tools">
+            <button type="button" class="btn sm" (click)="fetchRemote('Fork')" [disabled]="!!busy()" [title]="'git fetch ' + remoteOf('Fork') + ' (remote-tracking refs only)'">⟳ Fetch {{ remoteOf('Fork') }}</button>
+            @if (selFork(); as w) {
+              <button type="button" class="btn sm" (click)="askFastForward('Fork', w)" [disabled]="!!busy() || w.detached || !w.exists"
+                [title]="'Fetch ' + (w.branch ?? '') + ' and fast-forward this worktree to ' + remoteOf('Fork')">⇣ Update to {{ remoteOf('Fork') }}@if (w.behind) { <span class="behind">↓{{ w.behind }}</span> }</button>
+            }
+            <span class="small faint grow">{{ remoteCount('Fork') }} {{ remoteOf('Fork') }} branch(es) without a worktree</span>
+          </div>
+          @if (confirm(); as c) { @if (c.side === 'Fork') {
+            <div class="note accent confirm" role="alertdialog" [attr.aria-label]="c.title">
+              <b style="color: var(--h-accent-soft)">{{ c.title }}</b>
+              <div class="small">{{ c.detail }}</div>
+              @if (c.main) { <label class="small"><input type="checkbox" [checked]="confirmMain()" (change)="confirmMain.set($any($event.target).checked)" style="min-height: auto"> This is the main checkout — fast-forward it anyway</label> }
+              <div class="bar" style="gap: 8px"><button type="button" class="btn sm" (click)="confirm.set(null)">Cancel</button>
+                <button type="button" class="btn sm primary" (click)="runConfirmed()" [disabled]="!!busy() || (c.main && !confirmMain())">{{ c.action }}</button></div>
+            </div>
+          } }
           @if (selFork(); as w) {
             <div class="mono path">{{ w.path }}</div>
             <div class="flags">
@@ -280,6 +321,9 @@ export class HarmonyPage implements OnInit {
   readonly diffMsg = signal<string | null>(null);
   readonly overrideReason = signal('');
   private readonly blobCache = new Map<string, Blob>();
+  readonly remoteBranches = signal<{ Primary: RemoteBranch[]; Fork: RemoteBranch[] }>({ Primary: [], Fork: [] });
+  readonly confirm = signal<{ side: Side; kind: 'create' | 'ff'; title: string; detail: string; action: string; main?: boolean; branch?: string; id?: string } | null>(null);
+  readonly confirmMain = signal(false);
 
   readonly profile = computed(() => this.profiles().find((p) => p.name === this.profileName()) ?? null);
   readonly code = computed(() => this.profile()?.code ?? 'BE');
@@ -414,6 +458,7 @@ export class HarmonyPage implements OnInit {
     const [wts, plans] = await Promise.all([this.h.api.run('Listing worktrees', () => this.h.worktrees(name)), this.h.api.run('Loading plans', () => this.h.plans(name))]);
     this.worktrees.set(wts ?? []);
     this.plans.set((plans ?? []).filter((p) => !p.error));
+    void this.loadRemoteBranches();
     const target = this.plans().find((p) => p.id === restore?.plan) ?? this.plans()[0];
     this.pickWorktrees(target, restore);
     if (target) await this.openPlan(target.id, restore?.row);
@@ -478,6 +523,68 @@ export class HarmonyPage implements OnInit {
     const legacy = decisionInfo(v.eff).legacy(this.code());
     const r = await this.h.api.run('Updating profile', () => this.h.addOverride(this.profileName(), v.row.path, legacy, this.overrideReason() || 'set in Harmony review'));
     if (r) { this.toast.set(`Override added to profile ${this.profileName()}: ${v.row.path} → ${legacy} (.bak kept). Plans made from now on apply it.`); this.overrideReason.set(''); }
+  }
+
+  // ---- Worktree maintenance (fetch / create worktree / fast-forward). Every write is confirmed inline first.
+  remoteOf(side: Side) { return (side === 'Primary' ? this.profile()?.primary?.remote : this.profile()?.fork?.remote) ?? 'origin'; }
+  remoteWithoutWt(side: Side) { return this.remoteBranches()[side].filter((b) => !b.worktreeId); }
+  remoteCount(side: Side) { return this.remoteWithoutWt(side).length; }
+
+  /** Remote branches as of the last fetch (no network). */
+  private async loadRemoteBranches() {
+    const name = this.profileName();
+    const [p, f] = await Promise.all([this.h.remoteBranches(name, 'Primary').catch(() => []), this.h.remoteBranches(name, 'Fork').catch(() => [])]);
+    if (name === this.profileName()) this.remoteBranches.set({ Primary: p, Fork: f });
+  }
+
+  private async reloadWorktrees() {
+    const wts = await this.h.api.run('Listing worktrees', () => this.h.worktrees(this.profileName()));
+    if (wts) this.worktrees.set(wts);
+    await this.loadRemoteBranches();
+  }
+
+  async fetchRemote(side: Side) {
+    this.toast.set(null);
+    try {
+      const r = await this.h.fetchRemote(this.profileName(), side);
+      await this.reloadWorktrees();
+      this.toast.set(`Fetched ${r.remote}: ${r.branches} branch(es). Behind counts are up to date.`);
+    } catch { /* shared error banner */ }
+  }
+
+  askCreate(side: Side, b: RemoteBranch) {
+    const sp = side === 'Primary' ? this.profile()?.primary : this.profile()?.fork;
+    const root = (sp?.worktreeRoot ?? '').replace(/[\\/]+$/, '');
+    this.confirmMain.set(false);
+    this.confirm.set({ side, kind: 'create', branch: b.name, action: 'Create worktree',
+      title: `Create a worktree for ${this.remoteOf(side)}/${b.name}?`,
+      detail: `${b.localExists ? 'Uses your existing local branch' : 'Creates a local branch tracking ' + this.remoteOf(side) + '/' + b.name} at ${root}${root.includes('\\') ? '\\' : '/'}${b.name.replace(/\//g, root.includes('\\') ? '\\' : '/')}. Nothing else changes.` });
+  }
+
+  askFastForward(side: Side, w: Worktree) {
+    this.confirmMain.set(false);
+    this.confirm.set({ side, kind: 'ff', id: w.id, main: w.isMain, action: 'Fetch & fast-forward',
+      title: `Update ${w.branch} to ${this.remoteOf(side)}?`,
+      detail: `Fetches ${w.branch} and fast-forwards ${w.path}${w.behind ? ` (${w.behind} commit(s) behind as of the last fetch)` : ''}. Refused without changes if the worktree has uncommitted tracked changes or local commits not on ${this.remoteOf(side)}.` });
+  }
+
+  async runConfirmed() {
+    const c = this.confirm(); if (!c) return;
+    this.confirm.set(null); this.toast.set(null);
+    try {
+      if (c.kind === 'create' && c.branch) {
+        const r = await this.h.createWorktree(this.profileName(), c.side, c.branch);
+        await this.reloadWorktrees();
+        (c.side === 'Primary' ? this.pwt : this.fwt).set(r.worktree.id);
+        this.toast.set(r.created ? `Created worktree ${r.worktree.path} on ${r.worktree.branch}${r.trackingBranchCreated ? ' (new local branch tracking ' + this.remoteOf(c.side) + ')' : ''}.`
+          : `${c.branch} already has a worktree: ${r.worktree.path}. Selected it.`);
+      } else if (c.kind === 'ff' && c.id) {
+        const r = await this.h.fastForward(this.profileName(), c.id, !!c.main && this.confirmMain());
+        await this.reloadWorktrees();
+        this.toast.set(r.alreadyUpToDate ? `${r.branch} is already up to date with ${r.upstream}.`
+          : `${r.branch} fast-forwarded ${r.commits} commit(s): ${short(r.before)} → ${short(r.after)}. Re-plan to include them.`);
+      }
+    } catch { /* shared error banner shows git's reason; nothing was changed */ }
   }
 
   clearSessionSyncBase() { this.h.setSessionSyncBase(this.profileName(), null); this.sessionSyncBase.set(null); }

@@ -21,6 +21,15 @@ export class HarmonyApi {
     return this.api.post<{ pattern: string }>(`/align/${enc(profile)}/profile/override`, { pattern, decision, reason });
   }
 
+  remoteBranches(profile: string, side: 'Primary' | 'Fork') { return this.api.get<RemoteBranch[]>(`/align/${enc(profile)}/remote/${side}/branches`); }
+  fetchRemote(profile: string, side: 'Primary' | 'Fork') { return this.api.job<{ remote: string; branches: number }>(`Fetching ${side === 'Primary' ? 'primary' : 'fork'} remote`, `/align/${enc(profile)}/remote/${side}/fetch`, {}); }
+  createWorktree(profile: string, side: 'Primary' | 'Fork', branch: string) {
+    return this.api.job<{ worktree: Worktree; created: boolean; trackingBranchCreated: boolean }>(`Creating worktree for ${branch}`, `/align/${enc(profile)}/worktrees/create`, { side, branch });
+  }
+  fastForward(profile: string, id: string, confirmMainCheckout: boolean) {
+    return this.api.job<FastForwardResult>('Fetching and fast-forwarding', `/align/${enc(profile)}/worktrees/${enc(id)}/fast-forward`, { confirmMainCheckout });
+  }
+
   /** Harmony selection (profile, worktrees, plan, row, filters). Mirrored in the URL and in sessionStorage so a
    *  refresh, the nav link and "Back to Harmony" all return to the same review. */
   loadState(): HarmonyState | null { try { return JSON.parse(sessionStorage.getItem('harmony.state') ?? 'null'); } catch { return null; } }
@@ -49,10 +58,12 @@ export interface HarmonyState { profile?: string; p?: string; f?: string; plan?:
 export type Decision = 'TakePrimary' | 'TakeFork' | 'Merged' | 'DeleteBoth' | 'KeepForkOnly' | 'KeepBoth' | 'ManifestUnion' | 'Manual';
 export interface ProfileInfo {
   name: string; valid: boolean; error?: string; hash?: string; syncBase?: string; scope?: string[]; code?: string;
-  primary?: { label: string; repo: string; root: string; plannedBranch?: string };
-  fork?: { label: string; repo: string; root: string; plannedBranch?: string };
+  primary?: { label: string; repo: string; root: string; plannedBranch?: string; worktreeRoot?: string; remote?: string };
+  fork?: { label: string; repo: string; root: string; plannedBranch?: string; worktreeRoot?: string; remote?: string };
   neverPush?: string[]; weights?: { revertWeight: number; mergeWeight: number; conflictWeight: number };
 }
+export interface RemoteBranch { name: string; sha: string; date: string; author: string; subject: string; localExists: boolean; worktreeId?: string; }
+export interface FastForwardResult { worktreeId: string; branch: string; upstream: string; before: string; after: string; commits: number; alreadyUpToDate: boolean; }
 export interface ProfilesResponse { configPath: string; found: boolean; profiles: ProfileInfo[]; }
 export interface Worktree {
   id: string; side: 'Primary' | 'Fork'; repoAlias: string; path: string; branch?: string; head?: string;
