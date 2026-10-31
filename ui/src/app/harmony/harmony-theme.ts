@@ -8,7 +8,8 @@ export const HARMONY_THEME = `
   --h-accent: var(--accent); --h-accent-ink: var(--accent-ink); --h-accent-soft: var(--accent-soft); --h-on-accent: var(--on-accent);
   --h-qisl: #7DD3FC; --h-qisl-rgb: 56,189,248; --h-isl: #FCD34D; --h-isl-rgb: 251,191,36; --h-ok: var(--ok); --h-bad: var(--bad);
   --h-mono: var(--mono);
-  display: block; color: var(--h-ink); padding: 4px 4px 0;
+  display: block; position: relative; color: var(--h-ink); padding: 4px 4px 0;
+  min-height: calc(100vh - 120px);   /* the loading veil must cover the viewport even before data arrives */
 }
 * { box-sizing: border-box; }
 a { color: var(--h-accent-ink); } a:hover { color: var(--h-accent-soft); }

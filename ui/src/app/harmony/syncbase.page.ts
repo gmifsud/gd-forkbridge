@@ -2,6 +2,7 @@ import { Component, computed, inject, OnInit, signal } from '@angular/core';
 import { ActivatedRoute, RouterLink } from '@angular/router';
 import { AdvisorResult, HarmonyApi, LinePoint, ProfileInfo, short } from './harmony-api';
 import { HARMONY_THEME } from './harmony-theme';
+import { BusyVeil } from './busy-veil';
 
 interface Badge { text: string; title?: string; fg: string; rgb: string; }
 
@@ -9,7 +10,7 @@ interface Badge { text: string; title?: string; fg: string; rgb: string; }
  *  and scores rather than by sifting git log. Choosing is either per session (next plan) or the profile default. */
 @Component({
   selector: 'fb-syncbase',
-  imports: [RouterLink],
+  imports: [RouterLink, BusyVeil],
   styles: [HARMONY_THEME + `
     .top { display: grid; grid-template-columns: repeat(auto-fit, minmax(340px, 1fr)); gap: 16px; }
     .rec { border-top: 3px solid var(--h-accent); display: flex; flex-direction: column; gap: 10px; }
@@ -49,7 +50,8 @@ interface Badge { text: string; title?: string; fg: string; rgb: string; }
     .scroll-x { overflow-x: auto; }
   `],
   template: `
-  <div class="wrap">
+  <fb-busy-veil [active]="blocking()" />
+  <div class="wrap" [attr.inert]="blocking() ? '' : null" [attr.aria-busy]="blocking()">
     <div class="bar">
       <a [routerLink]="['/harmony']" style="font-weight: 600">← Back to Harmony</a>
       <h1>SyncBase · {{ title() }}</h1>
@@ -250,7 +252,15 @@ export class SyncBasePage implements OnInit {
     };
   });
 
+  /** Locked from navigation until the profile and the Advisor run have loaded, and during any later busy step. */
+  readonly ready = signal(false);
+  readonly blocking = computed(() => !this.ready() || !!this.busy());
+
   async ngOnInit() {
+    try { await this.init(); } finally { this.ready.set(true); }
+  }
+
+  private async init() {
     const p = this.route.snapshot.paramMap.get('profile') ?? 'backend';
     this.profileName.set(p);
     this.planId.set(this.route.snapshot.queryParamMap.get('plan'));

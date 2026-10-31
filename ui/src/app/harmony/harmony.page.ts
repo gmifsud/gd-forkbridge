@@ -6,6 +6,7 @@ import {
 } from './harmony-api';
 import { HARMONY_THEME } from './harmony-theme';
 import { WorktreeLookup } from './worktree-lookup';
+import { BusyVeil } from './busy-veil';
 
 type Side = 'Primary' | 'Fork';
 type DiffTab = 'base-primary' | 'base-fork' | 'primary-fork' | 'merged';
@@ -13,7 +14,7 @@ interface ViewRow { row: AlignRow; eff: Decision; edited: boolean; leaf: string;
 
 @Component({
   selector: 'fb-harmony',
-  imports: [RouterLink, WorktreeLookup],
+  imports: [RouterLink, WorktreeLookup, BusyVeil],
   styles: [HARMONY_THEME + `
     .sides { display: grid; grid-template-columns: repeat(auto-fit, minmax(300px, 1fr)); gap: 16px; }
     .side { display: flex; flex-direction: column; gap: 10px; border-top-width: 3px; }
@@ -66,7 +67,8 @@ interface ViewRow { row: AlignRow; eff: Decision; edited: boolean; leaf: string;
     .diff .add { background: rgba(45,212,191,.12); color: #A7F3D0; } .diff .del { background: rgba(248,113,113,.12); color: #FECACA; }
   `],
   template: `
-  <div class="wrap">
+  <fb-busy-veil [active]="blocking()" [label]="ready() ? 'Loading' : 'Restoring your selection'" />
+  <div class="wrap" [attr.inert]="blocking() ? '' : null" [attr.aria-busy]="blocking()">
     <div class="bar">
       <h1>Harmony</h1>
       <div class="seg" role="group" aria-label="Repository pair">
@@ -294,7 +296,15 @@ export class HarmonyPage implements OnInit {
   private readonly router = inject(Router);
   private readonly route = inject(ActivatedRoute);
   /** Set once the initial restore is done; before that, state changes are not written back. */
-  private readonly ready = signal(false);
+  readonly ready = signal(false);
+  /** Steps in flight that are not covered by the shared busy flag (parallel loads, multi-step restores). */
+  private readonly pending = signal(0);
+  /** The page is locked while restoring, while any tracked step runs and while the shared busy flag is set. */
+  readonly blocking = computed(() => !this.ready() || this.pending() > 0 || !!this.busy());
+  private async track<T>(f: () => Promise<T>): Promise<T> {
+    this.pending.update((n) => n + 1);
+    try { return await f(); } finally { this.pending.update((n) => n - 1); }
+  }
   readonly busy = this.h.api.busy;
   readonly short = short;
   readonly decisions = DECISIONS;
@@ -449,7 +459,9 @@ export class HarmonyPage implements OnInit {
     finally { this.ready.set(true); }
   }
 
-  async selectProfile(name: string, restore?: HarmonyState) {
+  selectProfile(name: string, restore?: HarmonyState) { return this.track(() => this.doSelectProfile(name, restore)); }
+
+  private async doSelectProfile(name: string, restore?: HarmonyState) {
     this.profileName.set(name);
     this.plan.set(null); this.planId.set(null); this.edits.set({}); this.selPath.set(null); this.toast.set(null);
     this.facet.set(restore?.facet ?? 'all'); this.q.set(restore?.q ?? '');
@@ -474,7 +486,9 @@ export class HarmonyPage implements OnInit {
     this.fwt.set(pick(this.forkWts(), restore?.f, p?.fork?.plannedBranch, latest?.fork?.branch));
   }
 
-  async openPlan(id: string, row?: string) {
+  openPlan(id: string, row?: string) { return this.track(() => this.doOpenPlan(id, row)); }
+
+  private async doOpenPlan(id: string, row?: string) {
     if (!id) return;
     const pl = await this.h.api.run('Loading plan', () => this.h.plan(this.profileName(), id));
     if (!pl) return;
@@ -537,7 +551,9 @@ export class HarmonyPage implements OnInit {
     if (name === this.profileName()) this.remoteBranches.set({ Primary: p, Fork: f });
   }
 
-  private async reloadWorktrees() {
+  private reloadWorktrees() { return this.track(() => this.doReloadWorktrees()); }
+
+  private async doReloadWorktrees() {
     const wts = await this.h.api.run('Listing worktrees', () => this.h.worktrees(this.profileName()));
     if (wts) this.worktrees.set(wts);
     await this.loadRemoteBranches();
@@ -589,7 +605,9 @@ export class HarmonyPage implements OnInit {
 
   clearSessionSyncBase() { this.h.setSessionSyncBase(this.profileName(), null); this.sessionSyncBase.set(null); }
 
-  async showDiff(tab: DiffTab) {
+  showDiff(tab: DiffTab) { return this.track(() => this.doShowDiff(tab)); }
+
+  private async doShowDiff(tab: DiffTab) {
     this.diffTab.set(tab); this.diffLines.set(null); this.diffMsg.set(null);
     const v = this.sel(); const id = this.planId(); if (!v || !id) return;
     const pick: Record<DiffTab, [string | undefined, string | undefined]> = {
