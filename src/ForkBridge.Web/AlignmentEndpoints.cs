@@ -153,6 +153,13 @@ public static class AlignmentEndpoints
             return Results.Ok(new { sha, size = bytes.Length, binary, truncated = bytes.Length > max, text = binary ? null : TextOps.ToText(bytes.Length > max ? bytes[..max] : bytes) });
         }));
 
+        api.MapGet("/{profile}/plans/{id}/diff", (string profile, string id, string path, CancellationToken ct) => GuardAsync(async () =>
+        {
+            var p = Profile(profile);
+            var plan = new AlignmentStore(p.StateDir).Load(StateStore.Sanitize(id));
+            return Results.Ok(await RowDiffs.ComputeAsync(p, git, plan, path, ct));      // path must be a row of the plan
+        }));
+
         api.MapPost("/{profile}/plans/{id}/decisions", (string profile, string id, AlignDecisionsBody b) => Guard(() =>
         {
             var p = Profile(profile);

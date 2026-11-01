@@ -93,6 +93,17 @@ grey / orange palette (tokens in `ui/src/styles.css`).
    (`ParentPlanId`, reason suffix `[changed in review: was X]`). *Add override to profile* writes the row's
    decision into the profile's `overrides` (surgical edit, `.bak` kept).
 
+**File Diff Inspector.** Double-click a row, use its ⤢ button, or *Full diff inspector* in the side panel. Tabs: ISL vs
+QiSL, SyncBase → ISL, SyncBase → QiSL, merged result, side-by-side content; unified git diffs of the blobs the plan
+recorded, last commit on each side, Prev/Next through the rows currently listed (←/→, 1–5 for tabs, Esc), Copy
+Diff, and the row's direction set in place (it joins the unsaved derived plan).
+
+**Messages.** Outcome messages are stamped with the selection they describe and disappear when the profile,
+worktrees or plan change; errors from Harmony and SyncBase are shown in context (a refused plan lists the files and
+the next step) instead of the shared banner. Warnings derived from state (dirty scope, missing worktree, detached
+HEAD, worktrees differing from the plan) are live and refresh when you return to the browser tab. The shared banner
+on other screens clears on navigation and collapses long errors.
+
 **State.** The selection (profile, worktrees, plan, row, filters) is kept in the URL and the browser session, so
 a refresh, the nav link and *Back to Harmony* return to the same review; unsaved decision changes are kept per
 plan until *Save as new plan* or *Discard*. Returning from SyncBase is instant (the loaded data is kept in memory

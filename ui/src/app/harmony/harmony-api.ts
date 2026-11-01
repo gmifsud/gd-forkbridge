@@ -10,6 +10,7 @@ export class HarmonyApi {
   worktrees(profile: string) { return this.api.get<Worktree[]>(`/align/${enc(profile)}/worktrees`); }
   plans(profile: string) { return this.api.get<PlanSummary[]>(`/align/${enc(profile)}/plans`); }
   plan(profile: string, id: string) { return this.api.get<AlignPlan>(`/align/${enc(profile)}/plans/${enc(id)}`); }
+  rowDiff(profile: string, id: string, path: string) { return this.api.get<RowDiff>(`/align/${enc(profile)}/plans/${enc(id)}/diff?path=${enc(path)}`); }
   blob(profile: string, id: string, sha: string) { return this.api.get<Blob>(`/align/${enc(profile)}/plans/${enc(id)}/blob?sha=${enc(sha)}`); }
   runPlan(profile: string, body: PlanBody) { return this.api.job<{ id: string; contentHash: string; rows: number; identical: number }>('Planning', `/align/${enc(profile)}/plan`, body); }
   saveDecisions(profile: string, id: string, edits: Record<string, string>) {
@@ -96,6 +97,12 @@ export interface AlignPlan {
   id: string; parentPlanId?: string; profile: string; profileHash: string; syncBase: string; scope: string[];
   primary: SideState; fork: SideState; baseTree: string; mergedTree: string; identical: number; preview: boolean;
   rows: AlignRow[]; createdAt: string; contentHash: string;
+}
+export interface RowDiff {
+  path: string; category: string; decision: Decision; reason: string; refs: string;
+  base?: BlobRef; primary?: BlobRef; fork?: BlobRef; merged?: BlobRef; binary: boolean;
+  forkVsPrimary: string; baseToFork: string; baseToPrimary: string; primaryToMerged: string; forkToMerged: string;
+  primaryText?: string; forkText?: string; primaryLastCommit?: string; forkLastCommit?: string; truncated: boolean;
 }
 export interface Blob { sha: string; size: number; binary: boolean; truncated: boolean; text?: string; }
 export interface PlanBody { primaryWorktreeId?: string; forkWorktreeId?: string; preview?: boolean; syncBase?: string; }

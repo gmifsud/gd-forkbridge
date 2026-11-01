@@ -1,12 +1,14 @@
-import { Component, computed, effect, inject, OnDestroy, OnInit, signal, untracked } from '@angular/core';
+import { Component, computed, DestroyRef, effect, inject, OnDestroy, OnInit, signal, untracked } from '@angular/core';
 import { ActivatedRoute, Router, RouterLink } from '@angular/router';
 import {
-  AlignPlan, AlignRow, Blob, categoryLabel, Decision, DECISIONS, decisionInfo, DiffLine, HarmonyApi, HarmonySnapshot, HarmonyState, lineDiff, PlanSummary, RemoteBranch,
+  AlignPlan, AlignRow, Blob, RowDiff, categoryLabel, Decision, DECISIONS, decisionInfo, DiffLine, HarmonyApi, HarmonySnapshot, HarmonyState, lineDiff, PlanSummary, RemoteBranch,
   ProfileInfo, short, Worktree,
 } from './harmony-api';
 import { HARMONY_THEME } from './harmony-theme';
 import { WorktreeLookup } from './worktree-lookup';
 import { BusyVeil } from './busy-veil';
+import { MessageView, parseError, UiMessage } from './ui-message';
+import { DiffInspector } from './diff-inspector';
 
 type Side = 'Primary' | 'Fork';
 type DiffTab = 'base-primary' | 'base-fork' | 'primary-fork' | 'merged';
@@ -14,7 +16,7 @@ interface ViewRow { row: AlignRow; eff: Decision; edited: boolean; leaf: string;
 
 @Component({
   selector: 'fb-harmony',
-  imports: [RouterLink, WorktreeLookup, BusyVeil],
+  imports: [RouterLink, WorktreeLookup, BusyVeil, MessageView, DiffInspector],
   styles: [HARMONY_THEME + `
     .sides { display: grid; grid-template-columns: repeat(auto-fit, minmax(300px, 1fr)); gap: 16px; }
     .side { display: flex; flex-direction: column; gap: 10px; border-top-width: 3px; }
@@ -52,6 +54,9 @@ interface ViewRow { row: AlignRow; eff: Decision; edited: boolean; leaf: string;
     .dir { font-size: 11px; color: var(--h-faint); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
     .cat { font-size: 11px; color: var(--h-ink3); }
     .dec { min-height: 32px; font-size: 12px; font-weight: 600; padding: 0 6px; }
+    .ins { margin-left: 8px; border: 1px solid var(--h-line); background: transparent; color: var(--h-muted); border-radius: 5px; font-size: 12px; line-height: 1; padding: 2px 5px; cursor: pointer; opacity: 0; }
+    .tr:hover .ins, .tr.sel .ins, .ins:focus-visible { opacity: 1; }
+    .ins:hover { color: var(--h-accent-soft); border-color: var(--h-accent); }
     .edited { margin-left: 8px; font-size: 11px; color: var(--h-on-accent); background: var(--h-accent-ink); border-radius: 4px; padding: 1px 6px; font-weight: 600; }
     .rows { max-height: 860px; overflow: auto; }
     .detail { flex: 1 1 360px; max-width: 460px; min-width: 300px; display: flex; flex-direction: column; gap: 12px; }
@@ -84,7 +89,7 @@ interface ViewRow { row: AlignRow; eff: Decision; edited: boolean; leaf: string;
       <div class="note warn">No alignment config found at <span class="mono">{{ configPath() }}</span>. Start forkbridge-web with <span class="mono">FORKBRIDGE_ALIGNMENT_CONFIG</span> pointing at your forkbridge.alignment.yml, or place it next to forkbridge.yml.</div>
     }
     @if (profile(); as p) { @if (!p.valid) { <div class="note bad">{{ p.error }}</div> } }
-    @if (toast()) { <div class="note ok" role="status">{{ toast() }}</div> }
+    <fb-message [msg]="shownMsg()" (dismiss)="msg.set(null)" />
 
     @if (profile()?.valid) {
       <section class="sides" aria-label="Sides">
@@ -164,7 +169,7 @@ interface ViewRow { row: AlignRow; eff: Decision; edited: boolean; leaf: string;
         </div>
       </section>
 
-      @if (selectionNote(); as n) { <div class="note warn" role="status">{{ n }}</div> }
+      @for (n of stateNotes(); track n.title) { <fb-message [msg]="n" [dismissible]="false" /> }
 
       <nav class="steps" aria-label="Steps">
         @for (s of steps(); track s.n) {
@@ -232,9 +237,9 @@ interface ViewRow { row: AlignRow; eff: Decision; edited: boolean; leaf: string;
             <div class="thead"><span>PATH</span><span>CATEGORY</span><span>DECISION</span></div>
             <div class="rows">
               @for (v of viewRows(); track v.row.path) {
-                <div class="tr" [class.sel]="v.row.path === selPath()" (click)="select(v.row.path)">
+                <div class="tr" [class.sel]="v.row.path === selPath()" (click)="select(v.row.path)" (dblclick)="openInspector(v.row.path)" title="Double-click for the full diff">
                   <span style="min-width: 0; display: flex; flex-direction: column">
-                    <span class="leaf">{{ v.leaf }}@if (v.edited) { <span class="edited">edited</span> }</span>
+                    <span class="leaf">{{ v.leaf }}@if (v.edited) { <span class="edited">edited</span> }<button type="button" class="ins" (click)="$event.stopPropagation(); openInspector(v.row.path)" [attr.aria-label]="'Full diff of ' + v.leaf" title="Full diff">⤢</button></span>
                     <span class="dir mono">{{ v.dir }}</span>
                   </span>
                   <span class="cat mono">{{ v.cat }}</span>
@@ -267,7 +272,8 @@ interface ViewRow { row: AlignRow; eff: Decision; edited: boolean; leaf: string;
                 <div style="background: rgba(56,189,248,.08); border-color: rgba(56,189,248,.3)"><div style="font-weight: 600; color: var(--h-qisl)">{{ profile()?.primary?.label }}</div>{{ onApply(v, 'p') }}</div>
                 <div style="background: rgba(251,191,36,.08); border-color: rgba(251,191,36,.3)"><div style="font-weight: 600; color: var(--h-isl)">{{ profile()?.fork?.label }}</div>{{ onApply(v, 'f') }}</div>
               </div>
-              <div class="eyebrow">Diff</div>
+              <div class="bar" style="gap: 8px"><span class="eyebrow">Diff</span>
+                <button type="button" class="btn sm ghost-accent grow" (click)="openInspector(v.row.path)">⤢ Full diff inspector</button></div>
               <div class="dtabs" role="tablist">
                 <button type="button" [class.on]="diffTab() === 'base-primary'" (click)="showDiff('base-primary')">base → {{ profile()?.primary?.label }}</button>
                 <button type="button" [class.on]="diffTab() === 'base-fork'" (click)="showDiff('base-fork')">base → {{ profile()?.fork?.label }}</button>
@@ -289,10 +295,16 @@ interface ViewRow { row: AlignRow; eff: Decision; edited: boolean; leaf: string;
       }
     }
   </div>
+  @if (inspectPath(); as ip) {
+    <fb-diff-inspector [d]="inspectDiff()" [path]="ip" [loading]="inspectLoading()" [effective]="inspectEffective()"
+      [index]="inspectIndex()" [count]="viewRows().length" [code]="code()" [primaryLabel]="profile()?.primary?.label ?? 'Primary'" [forkLabel]="profile()?.fork?.label ?? 'Fork'"
+      [onApply]="inspectApply()" (close)="closeInspector()" (navigate)="stepInspector($event)" (decide)="decideInInspector($event)" />
+  }
   `,
 })
 export class HarmonyPage implements OnInit, OnDestroy {
   private readonly h = inject(HarmonyApi);
+  private readonly destroyRef = inject(DestroyRef);
   private readonly router = inject(Router);
   private readonly route = inject(ActivatedRoute);
   /** Set once the initial restore is done; before that, state changes are not written back. */
@@ -324,7 +336,13 @@ export class HarmonyPage implements OnInit, OnDestroy {
   readonly facet = signal('all');
   readonly q = signal('');
   readonly selPath = signal<string | null>(null);
-  readonly toast = signal<string | null>(null);
+  /** The latest operation outcome (success or error), stamped with the selection it is about. */
+  readonly msg = signal<UiMessage | null>(null);
+  private readonly ctx = computed(() => `${this.profileName()}|${this.pwt()}|${this.fwt()}|${this.planId()}`);
+  /** Shown only while the selection is the one the message describes: changing profile, worktree or plan retires it. */
+  readonly shownMsg = computed(() => { const m = this.msg(); return m && (!m.ctx || m.ctx === this.ctx()) ? m : null; });
+  /** Success notes; same stamping as errors. */
+  readonly toast = { set: (t: string | null) => this.msg.set(t ? { kind: 'ok', title: t, ctx: untracked(() => this.ctx()) } : null) };
   readonly sessionSyncBase = signal<string | null>(null);
   readonly diffTab = signal<DiffTab>('primary-fork');
   readonly diffLines = signal<DiffLine[] | null>(null);
@@ -353,6 +371,21 @@ export class HarmonyPage implements OnInit, OnDestroy {
       (s.worktreePath ? s.worktreePath.toLowerCase() === w.path.toLowerCase() : s.branch === w.branch) && (!w.head || s.rev.startsWith(w.head) || w.head.startsWith(s.rev));
     if (same(p, pl.primary) && same(f, pl.fork)) return null;
     return `The selected worktrees differ from this plan (${pl.primary.branch ?? short(pl.primary.rev)} ↔ ${pl.fork.branch ?? short(pl.fork.rev)}), or a HEAD moved. Re-plan before reviewing.`;
+  });
+
+  /** Warnings derived from the current state (not dismissible: they go away when the state is fixed). */
+  readonly stateNotes = computed<UiMessage[]>(() => {
+    const out: UiMessage[] = [];
+    const note = this.selectionNote(); if (note) out.push({ kind: 'warn', title: note });
+    const refusedFiles = !!this.shownMsg()?.files;          // the refusal message already lists the files
+    const sides: [Worktree | null, string | undefined][] = [[this.selPrimary(), this.profile()?.primary?.label], [this.selFork(), this.profile()?.fork?.label]];
+    for (const [w, label] of sides) {
+      if (!w) continue;
+      if (!w.exists) out.push({ kind: 'warn', title: `The ${label} worktree is missing on disk`, hint: `${w.path} no longer exists. Pick another worktree, or create one from the remote.` });
+      else if (w.detached) out.push({ kind: 'warn', title: `The ${label} worktree is on a detached HEAD`, hint: `It can be planned, but it can't be updated from the remote until it is on a branch.` });
+      else if (w.scopeDirty && !refusedFiles) out.push({ kind: 'warn', title: `The ${label} worktree has uncommitted changes in the shared scope`, hint: `Plan will refuse it until they are committed or stashed in ${w.path}. Preview plan still works.` });
+    }
+    return out;
   });
 
   readonly steps = computed(() => {
@@ -425,6 +458,20 @@ export class HarmonyPage implements OnInit, OnDestroy {
   }
 
   constructor() {
+    // Errors from Harmony's own calls are shown here, in context and readable, instead of the shared banner.
+    effect(() => {
+      const e = this.h.api.error();
+      if (!e) return;
+      untracked(() => {
+        const m = parseError(e); m.ctx = this.ctx();
+        this.msg.set(m); this.h.api.error.set(null);
+        if (m.files) void this.quietWorktreeRefresh();      // the refusal may reveal a stale "scope clean" flag
+      });
+    });
+    // Coming back to the tab (e.g. after committing in the IDE) refreshes worktree flags so warnings stay true.
+    const onFocus = () => { if (this.ready() && !this.blocking()) void this.quietWorktreeRefresh(); };
+    window.addEventListener('focus', onFocus);
+    this.destroyRef.onDestroy(() => window.removeEventListener('focus', onFocus));
     // Write the selection back to the URL (refresh / back button) and sessionStorage (nav link, SyncBase's back
     // link), and keep unsaved decision edits per plan. Signals read here are the whole persisted state.
     effect(() => {
@@ -582,6 +629,44 @@ export class HarmonyPage implements OnInit, OnDestroy {
     if (r) { this.toast.set(`Override added to profile ${this.profileName()}: ${v.row.path} → ${legacy} (.bak kept). Plans made from now on apply it.`); this.overrideReason.set(''); }
   }
 
+  // ---- File Diff Inspector: full diffs of the plan's blobs; Prev/Next follow the rows currently listed.
+  readonly inspectPath = signal<string | null>(null);
+  readonly inspectDiff = signal<RowDiff | null>(null);
+  readonly inspectLoading = signal(false);
+  private readonly diffCache = new Map<string, RowDiff>();
+  readonly inspectIndex = computed(() => this.viewRows().findIndex((v) => v.row.path === this.inspectPath()));
+  private readonly inspectRow = computed(() => this.plan()?.rows.find((r) => r.path === this.inspectPath()) ?? null);
+  readonly inspectEffective = computed<Decision>(() => { const r = this.inspectRow(); return r ? this.eff(r) : 'Manual'; });
+  readonly inspectApply = computed(() => {
+    const r = this.inspectRow(); if (!r) return '';
+    const v = this.view(r);
+    return `On apply: ${this.profile()?.primary?.label} ${this.onApply(v, 'p')} · ${this.profile()?.fork?.label} ${this.onApply(v, 'f')}`;
+  });
+
+  async openInspector(path: string) {
+    const id = this.planId(); if (!id) return;
+    this.select(path); this.inspectPath.set(path);
+    const key = `${this.profileName()}|${id}|${path}`;
+    const hit = this.diffCache.get(key);
+    if (hit) { this.inspectDiff.set(hit); return; }
+    this.inspectDiff.set(null); this.inspectLoading.set(true);
+    try {
+      const d = await this.h.rowDiff(this.profileName(), id, path);
+      this.diffCache.set(key, d);
+      if (this.inspectPath() === path) this.inspectDiff.set(d);
+    } catch (e: any) {
+      if (this.inspectPath() === path) { this.closeInspector(); this.h.api.error.set(e?.message ?? String(e)); }
+    } finally { if (this.inspectPath() === path) this.inspectLoading.set(false); }
+  }
+
+  stepInspector(delta: number) {
+    const rows = this.viewRows(); const i = this.inspectIndex() + delta;
+    if (i >= 0 && i < rows.length) void this.openInspector(rows[i].row.path);
+  }
+
+  decideInInspector(d: Decision) { const r = this.inspectRow(); if (r) this.setDecision(r, d); }
+  closeInspector() { this.inspectPath.set(null); this.inspectDiff.set(null); this.inspectLoading.set(false); }
+
   // ---- Worktree maintenance (fetch / create worktree / fast-forward). Every write is confirmed inline first.
   remoteOf(side: Side) { return (side === 'Primary' ? this.profile()?.primary?.remote : this.profile()?.fork?.remote) ?? 'origin'; }
   remoteWithoutWt(side: Side) { return this.remoteBranches()[side].filter((b) => !b.worktreeId); }
@@ -592,6 +677,13 @@ export class HarmonyPage implements OnInit, OnDestroy {
     const name = this.profileName();
     const [p, f] = await Promise.all([this.h.remoteBranches(name, 'Primary').catch(() => []), this.h.remoteBranches(name, 'Fork').catch(() => [])]);
     if (name === this.profileName()) this.remoteBranches.set({ Primary: p, Fork: f });
+  }
+
+  /** Refreshes worktree flags (dirty, ahead/behind, HEAD) without locking the page or changing the selection. */
+  private async quietWorktreeRefresh() {
+    const name = this.profileName(); if (!name) return;
+    const wts = await this.h.worktrees(name).catch(() => null);
+    if (wts && name === this.profileName()) this.worktrees.set(wts);
   }
 
   private reloadWorktrees() { return this.track(() => this.doReloadWorktrees()); }

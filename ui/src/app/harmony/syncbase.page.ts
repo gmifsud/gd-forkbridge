@@ -1,8 +1,9 @@
-import { Component, computed, inject, OnInit, signal } from '@angular/core';
+import { Component, computed, effect, inject, OnInit, signal, untracked } from '@angular/core';
 import { ActivatedRoute, RouterLink } from '@angular/router';
 import { AdvisorResult, HarmonyApi, LinePoint, ProfileInfo, short } from './harmony-api';
 import { HARMONY_THEME } from './harmony-theme';
 import { BusyVeil } from './busy-veil';
+import { MessageView, parseError, UiMessage } from './ui-message';
 
 interface Badge { text: string; title?: string; fg: string; rgb: string; }
 
@@ -10,7 +11,7 @@ interface Badge { text: string; title?: string; fg: string; rgb: string; }
  *  and scores rather than by sifting git log. Choosing is either per session (next plan) or the profile default. */
 @Component({
   selector: 'fb-syncbase',
-  imports: [RouterLink, BusyVeil],
+  imports: [RouterLink, BusyVeil, MessageView],
   styles: [HARMONY_THEME + `
     .top { display: grid; grid-template-columns: repeat(auto-fit, minmax(340px, 1fr)); gap: 16px; }
     .rec { border-top: 3px solid var(--h-accent); display: flex; flex-direction: column; gap: 10px; }
@@ -61,7 +62,7 @@ interface Badge { text: string; title?: string; fg: string; rgb: string; }
     </div>
     <p class="muted" style="margin: 0; font-size: 13px">Pick the {{ profile()?.primary?.label ?? 'primary' }} commit the fork last synchronised from. It is the 3-way merge base for every shared path: too old and the fork's deliberate changes look like losses; too new and the fork's copies would revert primary work.</p>
 
-    @if (toast()) { <div class="note ok" role="status">{{ toast() }}</div> }
+    <fb-message [msg]="msg()" (dismiss)="msg.set(null)" />
     @if (!planId()) { <div class="note warn">No plan selected. Open this screen from Harmony (it passes the plan) so the Advisor knows which two commits to compare.</div> }
 
     @if (!res() && planId()) {
@@ -217,7 +218,13 @@ export class SyncBasePage implements OnInit {
   readonly lineIdx = signal(0);
   readonly selSha = signal<string | null>(null);
   readonly hideTransient = signal(false);
-  readonly toast = signal<string | null>(null);
+  /** Latest outcome on this screen; errors from its own calls land here instead of the shared banner. */
+  readonly msg = signal<UiMessage | null>(null);
+  readonly toast = { set: (t: string | null) => this.msg.set(t ? { kind: 'ok', title: t } : null) };
+  private readonly captureErrors = effect(() => {
+    const e = this.h.api.error();
+    if (e) untracked(() => { this.msg.set(parseError(e)); this.h.api.error.set(null); });
+  });
   readonly wR = signal(5); readonly wM = signal(1); readonly wC = signal(3);
 
   readonly title = computed(() => { const n = this.profileName(); return n.charAt(0).toUpperCase() + n.slice(1); });
