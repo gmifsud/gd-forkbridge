@@ -15,12 +15,14 @@ reference: `scripts/branch-alignment` (Backend) and `scripts/branch-alignment-fr
 | 0 | PS suites frozen as reference, golden corpus | done |
 | 1 | profiles, worktree catalogue, scratch repo, plan store, CLI | done |
 | 2 | planner (classification, merge, fork additions, overrides, reference tags, stale fixpoint, manifest unions), plan.json/tsv/md, parity checker | done - real-repo parity pending a Windows run |
-| 3 / 3b | web API + Harmony screen; SyncBase Advisor | done - review only; Apply/Verify/Publish locked until phase 4 |
+| 3 / 3b | web API + Harmony screen; SyncBase Advisor | done - plus worktree search, fetch / create worktree / fast-forward, selection kept across screens and refresh, loading lock. Apply/Verify/Publish locked until phase 4 |
 | 4–6 | apply / verify / undo, publish, restore, cut-over | later |
 
-Phases 1–3 are **read-only for every repository**: planning reads objects through a harness-owned scratch
-repository (`<stateDir>/<profile>/xrepo.git`, alternates to both object stores) and writes only under the
-state directory.
+Planning, review and the SyncBase Advisor are **read-only for every repository**: planning reads objects through
+a harness-owned scratch repository (`<stateDir>/<profile>/xrepo.git`, alternates to both object stores) and
+writes only under the state directory. The one exception is [worktree maintenance](#worktree-maintenance)
+(fetch, add a worktree, fast-forward), which you trigger and confirm explicitly. Applying a plan to a worktree
+is phase 4.
 
 ## Configuration
 
@@ -70,16 +72,32 @@ manifest is `D:\ForkBridge\state\alignment\golden\manifest.json`; golden data st
 
 ## Harmony screen (phase 3)
 
-`forkbridge-web` → **Harmony** (`/harmony`). Dark grey / orange theme scoped to the two screens.
+Start it (absolute config path: `dotnet run` changes the working directory to the project folder):
 
-1. **Select** a profile (Backend / Frontend) and a worktree per side. Badges: main checkout, protected (never
-   pushed), scope dirty / clean, ahead / behind, plan pinned.
+```powershell
+cd D:\Repos\Tools\gd-forkbridge
+$env:FORKBRIDGE_ALIGNMENT_CONFIG = "D:\ForkBridge\state\alignment\forkbridge.alignment.yml"
+dotnet run --project src\ForkBridge.Web -- --config "$PWD\src\ForkBridge.Web\forkbridge.yml"
+```
+
+Open the printed `http://127.0.0.1:5178/#token=…` link → **Harmony** (`/harmony`). The whole app uses one dark
+grey / orange palette (tokens in `ui/src/styles.css`).
+
+1. **Select** a profile (Backend / Frontend) and a worktree per side with the search box (every typed word must
+   match the branch, path or HEAD). Badges: main checkout, protected (never pushed), scope dirty / clean,
+   ahead / behind, plan pinned. Branches on the remote without a worktree are listed in the same search.
 2. **Plan** (or *Preview plan* for the profile's base refs) runs as a job and stores an immutable plan.
 3. **Review**: the harmony meter (identical today / converge on apply / declared divergence / needs a decision),
    queue facets, a filterable row table with a per-row decision, and a side panel with blob ids, on-apply
    effects and 3-way diffs. Decision edits never touch the plan: *Save as new plan* writes a derived plan
    (`ParentPlanId`, reason suffix `[changed in review: was X]`). *Add override to profile* writes the row's
    decision into the profile's `overrides` (surgical edit, `.bak` kept).
+
+**State.** The selection (profile, worktrees, plan, row, filters) is kept in the URL and the browser session, so
+a refresh, the nav link and *Back to Harmony* return to the same review; unsaved decision changes are kept per
+plan until *Save as new plan* or *Discard*. Returning from SyncBase is instant (the loaded data is kept in memory
+and refreshed quietly in the background). While data loads, a veil shows the current step and the page is
+locked (`inert`); long jobs keep a Cancel.
 
 **SyncBase** (`/harmony/<profile>/syncbase?plan=<id>`) runs the Advisor for the plan's two commits: the primary
 lane (scope-touching commits, newest first, prefilter score and evidence badges), the fork's bulk imports

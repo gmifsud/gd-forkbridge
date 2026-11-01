@@ -1,7 +1,7 @@
-import { Component, computed, effect, inject, OnInit, signal, untracked } from '@angular/core';
+import { Component, computed, effect, inject, OnDestroy, OnInit, signal, untracked } from '@angular/core';
 import { ActivatedRoute, Router, RouterLink } from '@angular/router';
 import {
-  AlignPlan, AlignRow, Blob, categoryLabel, Decision, DECISIONS, decisionInfo, DiffLine, HarmonyApi, HarmonyState, lineDiff, PlanSummary, RemoteBranch,
+  AlignPlan, AlignRow, Blob, categoryLabel, Decision, DECISIONS, decisionInfo, DiffLine, HarmonyApi, HarmonySnapshot, HarmonyState, lineDiff, PlanSummary, RemoteBranch,
   ProfileInfo, short, Worktree,
 } from './harmony-api';
 import { HARMONY_THEME } from './harmony-theme';
@@ -291,7 +291,7 @@ interface ViewRow { row: AlignRow; eff: Decision; edited: boolean; leaf: string;
   </div>
   `,
 })
-export class HarmonyPage implements OnInit {
+export class HarmonyPage implements OnInit, OnDestroy {
   private readonly h = inject(HarmonyApi);
   private readonly router = inject(Router);
   private readonly route = inject(ActivatedRoute);
@@ -443,20 +443,63 @@ export class HarmonyPage implements OnInit {
   }
 
   async ngOnInit() {
-    const res = await this.h.api.run('Loading profiles', () => this.h.profiles());
-    if (!res) return;
-    this.configPath.set(res.configPath); this.configFound.set(res.found); this.profiles.set(res.profiles);
-    // Precedence: URL (refresh, shared link) > session (nav link, back from SyncBase) > defaults.
+    // Precedence: URL (refresh, shared link) > in-memory snapshot (back from SyncBase, nav link) > session > defaults.
     const qp = this.route.snapshot.queryParamMap;
     const fromUrl: HarmonyState | null = qp.has('profile')
       ? { profile: qp.get('profile')!, p: qp.get('p') ?? undefined, f: qp.get('f') ?? undefined, plan: qp.get('plan') ?? undefined,
           row: qp.get('row') ?? undefined, facet: qp.get('facet') ?? undefined, q: qp.get('q') ?? undefined }
       : null;
-    const restore = fromUrl ?? this.h.loadState();
-    const wanted = restore?.profile ? res.profiles.find((p) => p.name === restore.profile) : undefined;
-    const first = wanted ?? res.profiles.find((p) => p.name === 'backend' && p.valid) ?? res.profiles.find((p) => p.valid) ?? res.profiles[0];
-    try { if (first) await this.selectProfile(first.name, wanted ? restore! : undefined); }
-    finally { this.ready.set(true); }
+    const snap = this.h.takeSnapshot();
+    if (snap && (!fromUrl || (fromUrl.profile === snap.state.profile && fromUrl.plan === snap.state.plan))) {
+      this.hydrate(snap);
+      this.ready.set(true);
+      void this.revalidate();            // quietly pick up profile edits, moved HEADs and new plans; no lock, selection kept
+      return;
+    }
+    try {
+      const res = await this.h.api.run('Loading profiles', () => this.h.profiles());
+      if (!res) return;
+      this.configPath.set(res.configPath); this.configFound.set(res.found); this.profiles.set(res.profiles);
+      const restore = fromUrl ?? this.h.loadState();
+      const wanted = restore?.profile ? res.profiles.find((p) => p.name === restore.profile) : undefined;
+      const first = wanted ?? res.profiles.find((p) => p.name === 'backend' && p.valid) ?? res.profiles.find((p) => p.valid) ?? res.profiles[0];
+      if (first) await this.selectProfile(first.name, wanted ? restore! : undefined);
+    } finally { this.ready.set(true); }     // always lift the loading veil, even when a load failed
+  }
+
+  ngOnDestroy() {
+    if (!this.ready() || !this.profileName()) return;
+    this.h.keepSnapshot({
+      profiles: this.profiles(), configPath: this.configPath(), configFound: this.configFound(), profileName: this.profileName(),
+      worktrees: this.worktrees(), plans: this.plans(), plan: this.plan(), remote: this.remoteBranches(), edits: this.edits(), diffTab: this.diffTab(),
+      state: { profile: this.profileName(), p: this.pwt() ?? undefined, f: this.fwt() ?? undefined, plan: this.planId() ?? undefined,
+        row: this.selPath() ?? undefined, facet: this.facet(), q: this.q() },
+    });
+  }
+
+  private hydrate(s: HarmonySnapshot) {
+    this.profiles.set(s.profiles); this.configPath.set(s.configPath); this.configFound.set(s.configFound); this.profileName.set(s.profileName);
+    this.worktrees.set(s.worktrees); this.plans.set(s.plans); this.plan.set(s.plan); this.planId.set(s.state.plan ?? null);
+    this.remoteBranches.set(s.remote); this.edits.set(s.edits); this.diffTab.set(s.diffTab as DiffTab);
+    this.pwt.set(s.state.p ?? null); this.fwt.set(s.state.f ?? null); this.selPath.set(s.state.row ?? null);
+    this.facet.set(s.state.facet ?? 'all'); this.q.set(s.state.q ?? '');
+    this.sessionSyncBase.set(this.h.sessionSyncBase(s.profileName));   // may have been set on the SyncBase screen
+  }
+
+  /** Background refresh after an instant return: updates lists in place and never touches the user's selection
+   *  unless the selected worktree no longer exists. Failures are ignored (the cached view stays usable). */
+  private async revalidate() {
+    const name = this.profileName();
+    const [prof, wts, plans] = await Promise.all([
+      this.h.profiles().catch(() => null), this.h.worktrees(name).catch(() => null), this.h.plans(name).catch(() => null)]);
+    if (name !== this.profileName()) return;
+    if (prof) { this.profiles.set(prof.profiles); this.configFound.set(prof.found); }
+    if (plans) this.plans.set(plans.filter((p) => !p.error));
+    if (wts) {
+      this.worktrees.set(wts);
+      if (!wts.some((w) => w.id === this.pwt()) || !wts.some((w) => w.id === this.fwt())) this.pickWorktrees(this.plans().find((p) => p.id === this.planId()), { p: this.pwt() ?? undefined, f: this.fwt() ?? undefined });
+    }
+    await this.loadRemoteBranches();
   }
 
   selectProfile(name: string, restore?: HarmonyState) { return this.track(() => this.doSelectProfile(name, restore)); }

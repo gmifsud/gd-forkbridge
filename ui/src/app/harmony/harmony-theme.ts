@@ -1,5 +1,5 @@
-/** Dark grey + orange theme for the Harmony screens, scoped to the components (the rest of ForkBridge keeps its
- *  own theme). Tokens are CSS custom properties on :host so a global dark theme can adopt them later. */
+/** Component styles shared by the Harmony and SyncBase screens. The palette itself is app-wide (tokens on :root in
+ *  styles.css); the --h-* names below are aliases of those tokens, plus the two side colours (QiSL blue, ISL amber). */
 export const HARMONY_THEME = `
 :host {
   /* Aliases of the app-wide tokens in styles.css, so the whole app shares one palette. */

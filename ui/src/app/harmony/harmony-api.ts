@@ -30,6 +30,12 @@ export class HarmonyApi {
     return this.api.job<FastForwardResult>('Fetching and fast-forwarding', `/align/${enc(profile)}/worktrees/${enc(id)}/fast-forward`, { confirmMainCheckout });
   }
 
+  /** Harmony's loaded data, kept while the user is on another screen (e.g. the commit graph) so going back is
+   *  instant. Held in memory only: a full refresh reloads from the server. Taken (and cleared) on return. */
+  private snapshot: HarmonySnapshot | null = null;
+  keepSnapshot(s: HarmonySnapshot) { this.snapshot = s; }
+  takeSnapshot(): HarmonySnapshot | null { const s = this.snapshot; this.snapshot = null; return s; }
+
   /** Harmony selection (profile, worktrees, plan, row, filters). Mirrored in the URL and in sessionStorage so a
    *  refresh, the nav link and "Back to Harmony" all return to the same review. */
   loadState(): HarmonyState | null { try { return JSON.parse(sessionStorage.getItem('harmony.state') ?? 'null'); } catch { return null; } }
@@ -55,6 +61,12 @@ const enc = encodeURIComponent;
 
  /** Query-parameter names are short on purpose: p = primary worktree id, f = fork worktree id. */
 export interface HarmonyState { profile?: string; p?: string; f?: string; plan?: string; row?: string; facet?: string; q?: string; }
+/** Everything Harmony shows, so returning to it needs no round trip (plans are immutable, so a cached plan never goes stale). */
+export interface HarmonySnapshot {
+  profiles: ProfileInfo[]; configPath: string; configFound: boolean; profileName: string; worktrees: Worktree[];
+  plans: PlanSummary[]; plan: AlignPlan | null; remote: { Primary: RemoteBranch[]; Fork: RemoteBranch[] };
+  state: HarmonyState; edits: Record<string, Decision>; diffTab: string;
+}
 export type Decision = 'TakePrimary' | 'TakeFork' | 'Merged' | 'DeleteBoth' | 'KeepForkOnly' | 'KeepBoth' | 'ManifestUnion' | 'Manual';
 export interface ProfileInfo {
   name: string; valid: boolean; error?: string; hash?: string; syncBase?: string; scope?: string[]; code?: string;

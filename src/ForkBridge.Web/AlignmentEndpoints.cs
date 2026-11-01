@@ -23,8 +23,11 @@ public sealed record AlignCreateWorktreeBody(string Side, string Branch);
 public sealed record AlignFastForwardBody(bool ConfirmMainCheckout);
 
 /// <summary>/api/align/* - the Harmony screens. Same security model as the rest of the API (loopback, per-launch
-/// token, JSON-only POSTs); inputs are profile names, worktree ids, plan ids, row paths that exist in a plan and
-/// hex commit ids - never filesystem paths or git arguments. Long operations run as serialized jobs.</summary>
+/// token, JSON-only POSTs); inputs are profile names, sides, worktree ids, plan ids, row paths that exist in a plan,
+/// branch names validated by git and present on the remote, and hex commit ids - never filesystem paths or git
+/// arguments. Planning, review and the Advisor only read the repositories; the worktree maintenance endpoints
+/// (fetch, add worktree, fast-forward) are the only repository writes until phase 4. Long operations run as
+/// serialized jobs.</summary>
 public static class AlignmentEndpoints
 {
     private static readonly Regex Hex = new("^[0-9a-f]{7,40}$", RegexOptions.Compiled);
