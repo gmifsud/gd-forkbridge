@@ -93,9 +93,11 @@ grey / orange palette (tokens in `ui/src/styles.css`).
    (`ParentPlanId`, reason suffix `[changed in review: was X]`). *Add override to profile* writes the row's
    decision into the profile's `overrides` (surgical edit, `.bak` kept).
 
-**File Diff Inspector.** Double-click a row, use its ⤢ button, or *Full diff inspector* in the side panel. Tabs: ISL vs
-QiSL, SyncBase → ISL, SyncBase → QiSL, merged result, side-by-side content; unified git diffs of the blobs the plan
-recorded, last commit on each side, Prev/Next through the rows currently listed (←/→, 1–5 for tabs, Esc), Copy
+**File Diff Inspector.** Double-click a row, use its ⤢ button, or *Full diff inspector* in the side panel. Tabs: **On
+apply** (follows the row's current direction, review edits included, and shows what each side will receive: the
+other side's version, the merge, a deletion, or "no change"), ISL vs QiSL, SyncBase → ISL, SyncBase → QiSL, merged
+result, side-by-side content; unified git diffs of the blobs the plan
+recorded, last commit on each side, Prev/Next through the rows currently listed (←/→, 1–6 for tabs, Esc), Copy
 Diff, and the row's direction set in place (it joins the unsaved derived plan).
 
 **Messages.** Outcome messages are stamped with the selection they describe and disappear when the profile,

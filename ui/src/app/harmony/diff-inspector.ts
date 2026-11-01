@@ -1,11 +1,46 @@
-import { Component, computed, effect, HostListener, input, output, signal } from '@angular/core';
+import { Component, computed, effect, HostListener, input, output, signal, untracked } from '@angular/core';
 import { categoryLabel, Decision, DECISIONS, decisionInfo, RowDiff, short } from './harmony-api';
 
-type Tab = 'forkVsPrimary' | 'baseToFork' | 'baseToPrimary' | 'merged' | 'side';
+type Tab = 'apply' | 'forkVsPrimary' | 'baseToFork' | 'baseToPrimary' | 'merged' | 'side';
+interface ApplySide { label: string; diff: string; note: string; }
+
+/** Reverses a unified diff (old ↔ new): swaps the file headers, the hunk ranges and the +/- lines. Exact, so
+ *  "ISL vs QiSL" can be shown as the change QiSL will receive. */
+export function invertDiff(diff: string): string {
+  const out = diff.split('\n').map((l) => {
+    if (l.startsWith('--- ')) return '+++ ' + l.slice(4);
+    if (l.startsWith('+++ ')) return '--- ' + l.slice(4);
+    const h = /^@@ -(\S+) \+(\S+) @@(.*)$/.exec(l);
+    if (h) return `@@ -${h[2]} +${h[1]} @@${h[3]}`;
+    if (l.startsWith('+')) return '-' + l.slice(1);
+    if (l.startsWith('-')) return '+' + l.slice(1);
+    return l;
+  });
+  if (out.length > 1 && out[0].startsWith('+++ ') && out[1].startsWith('--- ')) [out[0], out[1]] = [out[1], out[0]];
+  // Within each run of changed lines, list removals before additions (git's own order), keeping relative order.
+  const res: string[] = [];
+  for (let i = 0; i < out.length;) {
+    const l = out[i];
+    const changed = (x: string) => (x.startsWith('+') && !x.startsWith('+++ ')) || (x.startsWith('-') && !x.startsWith('--- '));
+    if (!changed(l)) { res.push(l); i++; continue; }
+    const run: string[] = [];
+    while (i < out.length && changed(out[i])) run.push(out[i++]);
+    res.push(...run.filter((x) => x.startsWith('-')), ...run.filter((x) => x.startsWith('+')));
+  }
+  return res.join('\n');
+}
+
+/** Whole-file deletion as a unified diff (for "delete both"). */
+function deletionDiff(text: string | undefined, label: string, path: string): string {
+  if (text === undefined || text === null) return '';
+  const lines = text.replace(/\r\n/g, '\n').replace(/\n$/, '').split('\n');
+  return [`--- ${label}/${path}`, '+++ /dev/null', `@@ -1,${lines.length} +0,0 @@`, ...lines.map((l) => '-' + l)].join('\n');
+}
 
 /** Harmony File Diff Inspector: full unified diffs of one plan row (the blobs the plan recorded), Prev/Next through
- *  the rows currently listed, and the row's direction set in place. Keys: ← / → (or K / J) previous / next,
- *  1–5 switch tabs, Esc closes. */
+ *  the rows currently listed, and the row's direction set in place. "On apply" (first tab) follows the current
+ *  direction, review edits included, and shows what each side will receive. Keys: ← / → (or K / J) previous / next,
+ *  1–6 switch tabs, Esc closes. */
 @Component({
   selector: 'fb-diff-inspector',
   styles: [`
@@ -81,12 +116,13 @@ type Tab = 'forkVsPrimary' | 'baseToFork' | 'baseToPrimary' | 'merged' | 'side';
         }
 
         <nav class="tabs sub-tabs" style="margin: 8px 0">
+          <button type="button" [class.active]="tab() === 'apply'" (click)="tab.set('apply')">On apply ({{ info(effective()).label }})@if (applyChanges()) { <span class="badge">changes</span> }</button>
           <button type="button" [class.active]="tab() === 'forkVsPrimary'" (click)="tab.set('forkVsPrimary')">{{ forkLabel() }} vs {{ primaryLabel() }}@if (d()?.forkVsPrimary) { <span class="badge">diff</span> }</button>
           <button type="button" [class.active]="tab() === 'baseToFork'" (click)="tab.set('baseToFork')">{{ forkLabel() }} changes (SyncBase → {{ forkLabel() }})@if (d()?.baseToFork) { <span class="badge">changed</span> }</button>
           <button type="button" [class.active]="tab() === 'baseToPrimary'" (click)="tab.set('baseToPrimary')">{{ primaryLabel() }} changes (SyncBase → {{ primaryLabel() }})@if (d()?.baseToPrimary) { <span class="badge">changed</span> }</button>
           @if (d()?.merged) { <button type="button" [class.active]="tab() === 'merged'" (click)="tab.set('merged')">Merged result</button> }
           <button type="button" [class.active]="tab() === 'side'" (click)="tab.set('side')">Side-by-side content</button>
-          <span class="keys" style="margin-left: auto; align-self: center"><kbd>←</kbd> <kbd>→</kbd> files · <kbd>1</kbd>–<kbd>5</kbd> tabs · <kbd>Esc</kbd> close</span>
+          <span class="keys" style="margin-left: auto; align-self: center"><kbd>←</kbd> <kbd>→</kbd> files · <kbd>1</kbd>–<kbd>6</kbd> tabs · <kbd>Esc</kbd> close</span>
         </nav>
 
         <div class="diff-modal-body">
@@ -94,6 +130,14 @@ type Tab = 'forkVsPrimary' | 'baseToFork' | 'baseToPrimary' | 'merged' | 'side';
             <div class="loading"><span class="ring" aria-hidden="true"></span>Loading diff…</div>
           } @else if (d()!.binary) {
             <p class="warn">Binary file: a textual diff is not applicable.</p>
+          } @else if (tab() === 'apply') {
+            <div class="stack">
+              @for (a of apply(); track a.label) {
+                <h4>{{ a.label }}</h4>
+                @if (a.diff) { <pre class="diff diff-viewer-pre">@for (l of lines(a.diff); track $index) {<span [class]="l.cls">{{ l.text }}
+</span>}</pre> } @else { <div class="empty-diff-note muted">{{ a.note }}</div> }
+              }
+            </div>
           } @else if (tab() === 'side') {
             <div class="side">
               <div><h4>{{ primaryLabel() }}</h4><pre class="out diff-side-pre">{{ d()!.primaryText ?? '(absent in ' + primaryLabel() + ')' }}</pre></div>
@@ -142,18 +186,40 @@ export class DiffInspector {
   readonly copied = signal('');
 
   constructor() {
-    // Open each file on the most informative view: the cross-repo diff, else whichever side changed.
+    // Open each file on what applying it will do; when it changes nothing, on the most informative comparison.
     effect(() => {
       const x = this.d(); if (!x) return;
-      this.tab.set(x.forkVsPrimary ? 'forkVsPrimary' : x.baseToFork ? 'baseToFork' : x.baseToPrimary ? 'baseToPrimary' : x.merged ? 'merged' : 'side');
+      const changes = untracked(() => this.applyChanges());
+      this.tab.set(changes ? 'apply' : x.forkVsPrimary ? 'forkVsPrimary' : x.baseToFork ? 'baseToFork' : x.baseToPrimary ? 'baseToPrimary' : x.merged ? 'merged' : 'side');
     });
   }
 
   catLabel(c: string) { return categoryLabel(c, this.code()); }
 
+  /** What each side receives under the current direction (review edits included), as diffs from its current content. */
+  readonly apply = computed<ApplySide[]>(() => {
+    const x = this.d(); if (!x) return [];
+    const P = this.primaryLabel(), F = this.forkLabel();
+    switch (this.effective()) {
+      case 'TakePrimary': return [{ label: `${F} will change (gets ${P}'s version)`, diff: x.forkVsPrimary, note: `${F} already matches ${P}.` },
+                                  { label: `${P} is unchanged`, diff: '', note: `${P} is the source for this file.` }];
+      case 'TakeFork': return [{ label: `${P} will change (gets ${F}'s version)`, diff: x.forkVsPrimary ? invertDiff(x.forkVsPrimary) : '', note: `${P} already matches ${F}.` },
+                               { label: `${F} is unchanged`, diff: '', note: `${F} is the source for this file.` }];
+      case 'Merged': return [{ label: `${P} will change (gets the merge)`, diff: x.primaryToMerged, note: `${P} already holds the merged content.` },
+                             { label: `${F} will change (gets the merge)`, diff: x.forkToMerged, note: `${F} already holds the merged content.` }];
+      case 'DeleteBoth': return [{ label: `${P}: file deleted`, diff: deletionDiff(x.primaryText, P, x.path), note: x.primary ? 'Deleted (binary or large: content not shown).' : `Already absent in ${P}.` },
+                                 { label: `${F}: file deleted`, diff: deletionDiff(x.forkText, F, x.path), note: x.fork ? 'Deleted (binary or large: content not shown).' : `Already absent in ${F}.` }];
+      case 'ManifestUnion': return [{ label: 'Package entries are unioned on apply', diff: '', note: `Each side gains the package entries only the other side has; the union is computed when the plan is applied. Compare the two manifests on the "${F} vs ${P}" tab.` }];
+      case 'Manual': return [{ label: 'Needs a decision', diff: '', note: 'Left untouched, and it blocks apply until you choose a direction above.' }];
+      default: return [{ label: 'No change on apply', diff: '', note: 'Both sides keep their own content; nothing changes on apply.' }];
+    }
+  });
+  readonly applyChanges = computed(() => this.apply().some((a) => !!a.diff));
+
   readonly activeText = computed(() => {
     const x = this.d(); if (!x) return '';
     switch (this.tab()) {
+      case 'apply': return this.apply().map((a) => a.diff).filter(Boolean).join('\n');
       case 'forkVsPrimary': return x.forkVsPrimary;
       case 'baseToFork': return x.baseToFork;
       case 'baseToPrimary': return x.baseToPrimary;
@@ -163,7 +229,7 @@ export class DiffInspector {
   });
 
   readonly tabLabel = computed(() => ({ forkVsPrimary: `${this.forkLabel()} vs ${this.primaryLabel()}`, baseToFork: `SyncBase → ${this.forkLabel()}`,
-    baseToPrimary: `SyncBase → ${this.primaryLabel()}`, merged: 'merged result', side: 'side-by-side' })[this.tab()]);
+    baseToPrimary: `SyncBase → ${this.primaryLabel()}`, merged: 'merged result', side: 'side-by-side', apply: 'on apply' })[this.tab()]);
 
   lines(raw: string) {
     return raw.split('\n').map((text) => ({
@@ -182,10 +248,10 @@ export class DiffInspector {
     const t = e.target as HTMLElement | null;
     if (t && (t.tagName === 'INPUT' || t.tagName === 'TEXTAREA' || t.tagName === 'SELECT' || t.isContentEditable)) return;
     if (e.ctrlKey || e.metaKey || e.altKey) return;
-    const tabs: Tab[] = ['forkVsPrimary', 'baseToFork', 'baseToPrimary', 'merged', 'side'];
+    const tabs: Tab[] = ['apply', 'forkVsPrimary', 'baseToFork', 'baseToPrimary', 'merged', 'side'];
     if (e.key === 'Escape') { e.preventDefault(); this.close.emit(); }
     else if (e.key === 'ArrowRight' || e.key === 'j') { e.preventDefault(); if (this.index() < this.count() - 1) this.navigate.emit(1); }
     else if (e.key === 'ArrowLeft' || e.key === 'k') { e.preventDefault(); if (this.index() > 0) this.navigate.emit(-1); }
-    else if (/^[1-5]$/.test(e.key)) { const tb = tabs[+e.key - 1]; if (tb !== 'merged' || this.d()?.merged) this.tab.set(tb); }
+    else if (/^[1-6]$/.test(e.key)) { const tb = tabs[+e.key - 1]; if (tb !== 'merged' || this.d()?.merged) this.tab.set(tb); }
   }
 }
