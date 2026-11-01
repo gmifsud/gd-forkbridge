@@ -9,6 +9,8 @@ export interface UiMessage {
   detail?: string;
   files?: { st: string; path: string }[];
   ctx?: string;
+  /** Optional remedy the host can run (e.g. "Plan committed HEAD"); emitted by id. */
+  action?: { id: string; label: string };
 }
 
 const STATUS: Record<string, string> = { M: 'modified', A: 'added', D: 'deleted', R: 'renamed', C: 'copied', U: 'conflict', '??': 'untracked', T: 'type changed' };
@@ -24,8 +26,9 @@ export function parseError(raw: string, labels?: { primary?: string; fork?: stri
     return {
       kind: 'error',
       title: `Plan refused: the ${side} worktree has uncommitted changes in the shared scope`,
-      hint: `A worktree plan uses its files as they are on disk, so the shared scope must be clean. Commit or stash these files in ${path}, then press Plan again. Preview plan still works (it plans the profile's base refs, not this worktree).`,
+      hint: `A plan holds committed content only, so planning stops rather than silently leave these changes out. Commit or stash them in ${path} and press Plan again, or plan the worktree's committed HEAD and leave them out.`,
       files: porcelain(list),
+      action: { id: 'plan-committed', label: 'Plan committed HEAD (leave these changes out)' },
     };
   }
   const diverged = /^(.+?) has (\d+) local commit\(s\) not on (.+?) \(and is (\d+) behind\)/.exec(text);
@@ -69,6 +72,8 @@ function porcelain(list: string): { st: string; path: string }[] {
     li { display: flex; gap: 10px; color: var(--ink2); }
     .st { flex: none; width: 76px; color: var(--faint); }
     .p { word-break: break-all; }
+    .act { align-self: flex-start; min-height: 30px; padding: 0 12px; border-radius: 8px; border: 1px solid var(--accent); background: transparent; color: var(--accent-ink); font: inherit; font-size: 12px; font-weight: 600; cursor: pointer; }
+    .act:hover { background: rgba(249,115,22,.12); }
     .more { align-self: flex-start; border: 0; background: transparent; color: var(--accent-ink); cursor: pointer; font: inherit; font-size: 12px; padding: 0; }
     pre { margin: 0; white-space: pre-wrap; word-break: break-word; font: 12px/1.5 var(--mono); color: var(--ink2); background: rgba(0,0,0,.2); border-radius: 8px; padding: 8px 10px; max-height: 240px; overflow: auto; }
   `],
@@ -76,12 +81,13 @@ function porcelain(list: string): { st: string; path: string }[] {
     @if (msg(); as m) {
       <div class="m" [class]="m.kind" [attr.role]="m.kind === 'error' ? 'alert' : 'status'">
         <div class="head"><span class="title">{{ m.title }}</span>
-          @if (m.kind !== 'ok' || dismissible()) { <button type="button" class="x" aria-label="Dismiss" (click)="dismiss.emit()">×</button> }</div>
+          @if (dismissible()) { <button type="button" class="x" aria-label="Dismiss" (click)="dismiss.emit()">×</button> }</div>
         @if (m.hint) { <div class="hint">{{ m.hint }}</div> }
         @if (m.files?.length) {
           <ul aria-label="Files">@for (f of shownFiles(); track f.path) { <li><span class="st">{{ f.st }}</span><span class="p">{{ f.path }}</span></li> }</ul>
           @if (m.files!.length > 8) { <button type="button" class="more" (click)="all.set(!all())">{{ all() ? 'Show fewer' : 'Show all ' + m.files!.length + ' files' }}</button> }
         }
+        @if (m.action) { <button type="button" class="act" (click)="act.emit(m.action!.id)">{{ m.action!.label }}</button> }
         @if (m.detail) {
           <button type="button" class="more" (click)="open.set(!open())">{{ open() ? 'Hide details' : 'Show details' }}</button>
           @if (open()) { <pre>{{ m.detail }}</pre> }
@@ -94,6 +100,7 @@ export class MessageView {
   readonly msg = input<UiMessage | null>(null);
   readonly dismissible = input(true);
   readonly dismiss = output<void>();
+  readonly act = output<string>();
   readonly all = signal(false);
   readonly open = signal(false);
   readonly shownFiles = computed(() => { const f = this.msg()?.files ?? []; return this.all() ? f : f.slice(0, 8); });

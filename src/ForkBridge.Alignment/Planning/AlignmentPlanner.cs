@@ -16,6 +16,10 @@ public sealed record SideSelection
     public string? Rev { get; init; }
     /// <summary>A worktree (canonical path from the catalogue): its HEAD is planned and its scope must be clean.</summary>
     public string? WorktreePath { get; init; }
+    /// <summary>With <see cref="WorktreePath"/>: plan the worktree's committed HEAD even though its scope has uncommitted
+    /// changes. Those changes are not part of the plan (a plan only ever holds committed content); the caller asked
+    /// for this explicitly. Applying a plan (phase 4) re-checks the worktree itself.</summary>
+    public bool IgnoreUncommitted { get; init; }
     /// <summary>Preview: base ref plus merge refs merged in memory (no branch needed).</summary>
     public bool Preview { get; init; }
 }
@@ -212,7 +216,7 @@ public sealed class AlignmentPlanner(ResolvedProfile profile, AlignGit git, Acti
         {
             var wt = sel.WorktreePath;
             var status = (await git.RunAsync(wt, ["status", "--porcelain=v1", "--untracked-files=all", "--", .. x.ScopePathspecs()], ct: ct)).StdOut.TrimEnd();
-            if (status.Length > 0) throw new AlignmentException($"{sp.Label} worktree {wt} has uncommitted changes in the aligned scope:\n{status}", 11);
+            if (status.Length > 0 && !sel.IgnoreUncommitted) throw new AlignmentException($"{sp.Label} worktree {wt} has uncommitted changes in the aligned scope:\n{status}", 11);
             var head = await git.TextAsync(wt, "rev-parse", "HEAD");
             var branch = await git.TextAsync(wt, "rev-parse", "--abbrev-ref", "HEAD");
             return new SideState(sp.Repo, sp.Label, branch == "HEAD" ? null : branch, head, head, "", wt);

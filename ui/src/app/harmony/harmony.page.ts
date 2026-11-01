@@ -89,7 +89,7 @@ interface ViewRow { row: AlignRow; eff: Decision; edited: boolean; leaf: string;
       <div class="note warn">No alignment config found at <span class="mono">{{ configPath() }}</span>. Start forkbridge-web with <span class="mono">FORKBRIDGE_ALIGNMENT_CONFIG</span> pointing at your forkbridge.alignment.yml, or place it next to forkbridge.yml.</div>
     }
     @if (profile(); as p) { @if (!p.valid) { <div class="note bad">{{ p.error }}</div> } }
-    <fb-message [msg]="shownMsg()" (dismiss)="msg.set(null)" />
+    <fb-message [msg]="shownMsg()" (dismiss)="msg.set(null)" (act)="onAction($event)" />
 
     @if (profile()?.valid) {
       <section class="sides" aria-label="Sides">
@@ -169,7 +169,7 @@ interface ViewRow { row: AlignRow; eff: Decision; edited: boolean; leaf: string;
         </div>
       </section>
 
-      @for (n of stateNotes(); track n.title) { <fb-message [msg]="n" [dismissible]="false" /> }
+      @for (n of stateNotes(); track n.title) { <fb-message [msg]="n" [dismissible]="false" (act)="onAction($event)" /> }
 
       <nav class="steps" aria-label="Steps">
         @for (s of steps(); track s.n) {
@@ -383,7 +383,16 @@ export class HarmonyPage implements OnInit, OnDestroy {
       if (!w) continue;
       if (!w.exists) out.push({ kind: 'warn', title: `The ${label} worktree is missing on disk`, hint: `${w.path} no longer exists. Pick another worktree, or create one from the remote.` });
       else if (w.detached) out.push({ kind: 'warn', title: `The ${label} worktree is on a detached HEAD`, hint: `It can be planned, but it can't be updated from the remote until it is on a branch.` });
-      else if (w.scopeDirty && !refusedFiles) out.push({ kind: 'warn', title: `The ${label} worktree has uncommitted changes in the shared scope`, hint: `Plan will refuse it until they are committed or stashed in ${w.path}. Preview plan still works.` });
+      else if (w.scopeDirty && !refusedFiles) {
+        const pl = this.plan();
+        const planned = pl && !pl.preview && !note && [pl.primary, pl.fork].some((sd) => sd.worktreePath?.toLowerCase() === w.path.toLowerCase());
+        out.push(planned
+          ? { kind: 'warn', title: `The ${label} worktree has uncommitted changes that are not part of this plan`,
+              hint: `This plan covers its committed HEAD (${short(w.head)}). Commit the changes in ${w.path} and press Plan to include them.` }
+          : { kind: 'warn', title: `The ${label} worktree has uncommitted changes in the shared scope`,
+              hint: `Plan stops on them, because a plan holds committed content only. Commit or stash them in ${w.path}, or plan the worktree's committed HEAD and leave them out.`,
+              action: { id: 'plan-committed', label: 'Plan committed HEAD (leave uncommitted changes out)' } });
+      }
     }
     return out;
   });
@@ -593,15 +602,18 @@ export class HarmonyPage implements OnInit, OnDestroy {
     this.selPath.set(row && byPath.has(row) ? row : firstPromo?.path ?? null);
   }
 
-  async runPlan(preview: boolean) {
+  onAction(id: string) { if (id === 'plan-committed') void this.runPlan(false, true); }
+
+  /** ignoreUncommitted: plan the worktrees' committed HEADs even if their scope has uncommitted changes (explicit opt-in). */
+  async runPlan(preview: boolean, ignoreUncommitted = false) {
     this.toast.set(null);
     const body = preview ? { preview: true, syncBase: this.sessionSyncBase() ?? undefined }
-      : { primaryWorktreeId: this.pwt() ?? undefined, forkWorktreeId: this.fwt() ?? undefined, syncBase: this.sessionSyncBase() ?? undefined };
+      : { primaryWorktreeId: this.pwt() ?? undefined, forkWorktreeId: this.fwt() ?? undefined, syncBase: this.sessionSyncBase() ?? undefined, ignoreUncommitted };
     try {
       const r = await this.h.runPlan(this.profileName(), body);
       this.plans.set((await this.h.plans(this.profileName())).filter((p) => !p.error));
       await this.openPlan(r.id);
-      this.toast.set(`Plan ${r.id}: ${r.rows} rows, ${r.identical} identical paths.`);
+      this.toast.set(`Plan ${r.id}: ${r.rows} rows, ${r.identical} identical paths.${ignoreUncommitted ? ' Planned the committed HEAD; uncommitted changes are not part of this plan.' : ''}`);
     } catch { /* surfaced by the shared error banner */ }
   }
 

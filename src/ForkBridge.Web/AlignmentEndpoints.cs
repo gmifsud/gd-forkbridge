@@ -14,7 +14,7 @@ using ForkBridge.Core.Storage;
 
 namespace ForkBridge.Web;
 
-public sealed record AlignPlanBody(string? PrimaryWorktreeId, string? ForkWorktreeId, string? PrimaryRev, string? ForkRev, bool Preview, string? SyncBase);
+public sealed record AlignPlanBody(string? PrimaryWorktreeId, string? ForkWorktreeId, string? PrimaryRev, string? ForkRev, bool Preview, string? SyncBase, bool IgnoreUncommitted = false);
 public sealed record AlignDecisionsBody(Dictionary<string, string> Edits);
 public sealed record AlignAdviseBody(string? PrimaryWorktreeId, string? ForkWorktreeId, string? PrimaryRev, string? ForkRev, string? PlanId, int? RevertWeight, int? MergeWeight, int? ConflictWeight);
 public sealed record AlignSyncBaseBody(string Sha, string? Note);
@@ -111,7 +111,7 @@ public static class AlignmentEndpoints
                 {
                     if (b.Preview) return new SideSelection { Preview = true };
                     if (rev is not null) { if (!Hex.IsMatch(rev)) throw new ArgumentException("revisions must be commit ids."); return new SideSelection { Rev = rev }; }
-                    if (wt is not null) return new SideSelection { WorktreePath = (await catalog.ResolveAsync(StateStore.Sanitize(wt), ct)).Path };
+                    if (wt is not null) return new SideSelection { WorktreePath = (await catalog.ResolveAsync(StateStore.Sanitize(wt), ct)).Path, IgnoreUncommitted = b.IgnoreUncommitted };
                     throw new ArgumentException("Choose a worktree or preview for each side.");
                 }
                 var planner = new AlignmentPlanner(p, git);

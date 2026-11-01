@@ -105,7 +105,7 @@ export interface RowDiff {
   primaryText?: string; forkText?: string; primaryLastCommit?: string; forkLastCommit?: string; truncated: boolean;
 }
 export interface Blob { sha: string; size: number; binary: boolean; truncated: boolean; text?: string; }
-export interface PlanBody { primaryWorktreeId?: string; forkWorktreeId?: string; preview?: boolean; syncBase?: string; }
+export interface PlanBody { primaryWorktreeId?: string; forkWorktreeId?: string; preview?: boolean; syncBase?: string; ignoreUncommitted?: boolean; }
 export interface AdviseBody { planId?: string; primaryWorktreeId?: string; forkWorktreeId?: string; revertWeight?: number; mergeWeight?: number; conflictWeight?: number; }
 export interface LinePoint { sha: string; date: string; author: string; subject: string; score: number; risk: number; merges: number; transient: boolean; }
 export interface AdvisorLine { name: string; ref: string; selected: boolean; commits: LinePoint[]; }

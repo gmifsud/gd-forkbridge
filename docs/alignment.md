@@ -86,7 +86,11 @@ grey / orange palette (tokens in `ui/src/styles.css`).
 1. **Select** a profile (Backend / Frontend) and a worktree per side with the search box (every typed word must
    match the branch, path or HEAD). Badges: main checkout, protected (never pushed), scope dirty / clean,
    ahead / behind, plan pinned. Branches on the remote without a worktree are listed in the same search.
-2. **Plan** (or *Preview plan* for the profile's base refs) runs as a job and stores an immutable plan.
+2. **Plan** (or *Preview plan* for the profile's base refs) runs as a job and stores an immutable plan. A plan holds
+   committed content only, so a worktree whose shared scope has uncommitted changes is refused rather than planned
+   with those changes silently left out. *Plan committed HEAD* (offered on the warning and the refusal) is the
+   explicit opt-in: it plans the worktree's committed HEAD, stays pinned to that worktree, and the warning then says
+   the uncommitted changes are not part of the plan. API: `ignoreUncommitted: true` on `POST /plan`.
 3. **Review**: the harmony meter (identical today / converge on apply / declared divergence / needs a decision),
    queue facets, a filterable row table with a per-row decision, and a side panel with blob ids, on-apply
    effects and 3-way diffs. Decision edits never touch the plan: *Save as new plan* writes a derived plan

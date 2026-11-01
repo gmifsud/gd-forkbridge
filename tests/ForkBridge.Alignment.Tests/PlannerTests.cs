@@ -156,5 +156,13 @@ public class PlannerTests
         Assert.True((await catalog.ListAsync()).Single(w => w.Id == linked.Id).ScopeDirty);
         var ex = await Assert.ThrowsAsync<AlignmentException>(() => planner.PlanAsync(new AlignmentPlanRequest(new SideSelection { WorktreePath = linked.Path }, new SideSelection { WorktreePath = forkMain.Path })));
         Assert.Contains("uncommitted changes in the aligned scope", ex.Message);
+
+        // Explicit opt-in: plan the committed HEAD; the uncommitted edit is not part of the plan.
+        var head = AlignFixture.G(wt, "rev-parse", "HEAD");
+        var committed = await planner.PlanAsync(new AlignmentPlanRequest(new SideSelection { WorktreePath = linked.Path, IgnoreUncommitted = true }, new SideSelection { WorktreePath = forkMain.Path }));
+        Assert.Equal(head, committed.Primary.Rev);
+        Assert.Equal("migrations/align", committed.Primary.Branch);
+        Assert.Equal(linked.Path, committed.Primary.WorktreePath);
+        Assert.Equal(clean.ContentHash, committed.ContentHash);                            // same commits → same plan; the dirty edit changed nothing
     }
 }
