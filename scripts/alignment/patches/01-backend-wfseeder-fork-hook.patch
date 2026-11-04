@@ -1,0 +1,64 @@
+Subject: [PATCH] feat(wf): open WFSeederService as an extension point for fork-owned workflows
+
+Converts WFSeederService to a partial class with a partial-method hook. A fork
+provides WFSeederService.Fork.cs with the implementation; with no implementation
+the compiler erases the call, so Backend carries no fork code. Removes the Backend
+copy of the ISL CustomerOnboarding seed call (the seed moves to the fork).
+Verified with `git apply --check` against migrations/24326-upgrade-angular-to-version-17 (blob 452e5b7).
+
+diff --git a/QiSL.App.WF/src/QiSL.App.WF.EntityFrameworkCore/Migrations/Seed/WFSeederService.cs b/QiSL.App.WF/src/QiSL.App.WF.EntityFrameworkCore/Migrations/Seed/WFSeederService.cs
+index 452e5b7..557fc33 100644
+--- a/QiSL.App.WF/src/QiSL.App.WF.EntityFrameworkCore/Migrations/Seed/WFSeederService.cs
++++ b/QiSL.App.WF/src/QiSL.App.WF.EntityFrameworkCore/Migrations/Seed/WFSeederService.cs
+@@ -6,7 +6,6 @@ using QiSL.App.WF.EntityFrameworkCore;
+ using QiSL.App.WF.Migrations.Seed.Workflows.Allotments;
+ using QiSL.App.WF.Migrations.Seed.Workflows.CapitalReductions;
+ using QiSL.App.WF.Migrations.Seed.Workflows.Conversions;
+-using QiSL.App.WF.Migrations.Seed.Workflows.CustomerOnboarding;
+ using QiSL.App.WF.Migrations.Seed.Workflows.JobApprovals;
+ using QiSL.App.WF.Migrations.Seed.Workflows.OutstandingInvoiceReminders;
+ using QiSL.App.WF.Migrations.Seed.Workflows.Pledges;
+@@ -26,7 +25,7 @@ namespace QiSL.App.WF.Migrations.Seed
+             int? tenantId);
+     }
+ 
+-    public class WFSeederService : IWFSeederService
++    public partial class WFSeederService : IWFSeederService
+     {
+         public WFSeederService()
+         {
+@@ -128,16 +127,26 @@ namespace QiSL.App.WF.Migrations.Seed
+                   localizationManager: localizationManager,
+                   localizationSourceName: WFConsts.LocalizationSourceName)
+               .CreateForTenant(tenantId);
+-
+-            new CustomerOnboardingWorkflowStandingDataCreator(
+-                  unitOfWorkManager: unitOfWorkManager,
+-                  baseTemplateDbContext: baseTemplateDbContext,
+-                  context: context,
+-                  localizationManager: localizationManager,
+-                  localizationSourceName: WFConsts.LocalizationSourceName)
+-              .CreateForTenant(tenantId);
+             #endregion
+ 
++            SeedForkWorkflows(
++                unitOfWorkManager,
++                localizationManager,
++                baseTemplateDbContext,
++                context,
++                tenantId);
+         }
++
++        /// <summary>
++        /// Extension point for fork-owned workflow standing data. Implement in a
++        /// fork-only WFSeederService.Fork.cs. With no implementation the call is
++        /// removed at compile time (C# partial method semantics).
++        /// </summary>
++        partial void SeedForkWorkflows(
++            IUnitOfWorkManager unitOfWorkManager,
++            ILocalizationManager localizationManager,
++            BaseTemplateDbContext baseTemplateDbContext,
++            WFDbContext context,
++            int? tenantId);
+     }
+ }

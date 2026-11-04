@@ -130,6 +130,7 @@ public sealed record ComponentDrift
 public sealed record Plan
 {
     public required string Id { get; init; }
+    public string? ParentPlanId { get; init; }
     public int SchemaVersion { get; init; } = 1;
     public required DateTimeOffset CreatedAt { get; init; }
     public required string Pair { get; init; }
@@ -148,6 +149,9 @@ public sealed record Plan
     public string? MergeBaseExplanation { get; init; }
     public string? RangeExpression { get; init; }
     public List<string> SelectedComponents { get; init; } = new();
+    [System.Text.Json.Serialization.JsonIgnore(Condition = System.Text.Json.Serialization.JsonIgnoreCondition.WhenWritingDefault)]
+    public bool AllowProposed { get; init; }
+    public List<string>? Reapply { get; init; }
     public List<PlannedCommit> Commits { get; init; } = new();
     /// <summary>Reconcile mode: single aggregated patch from baseline to source snapshot.</summary>
     public string? ReconcileBaseline { get; init; }
@@ -158,6 +162,8 @@ public sealed record Plan
     public required string PolicyHash { get; init; }
     public required Freshness Freshness { get; init; }
     public List<string> AcceptedFindings { get; init; } = new();
+    public Dictionary<string, Decision>? PathOverrides { get; init; }
+    public List<string>? OverriddenFindings { get; init; }
     public RunStatus PreliminaryStatus { get; set; }
     public string? ContentHash { get; set; }
 }
@@ -204,6 +210,7 @@ public sealed record ApprovalRecord
     public required string PolicyHash { get; init; }
     public required string TargetBaseSha { get; init; }
     public List<string> AcceptedFindings { get; init; } = new();
+    public bool ValidationOverridden { get; init; }
     public required string ApprovedBy { get; init; }
     public required DateTimeOffset ApprovedAt { get; init; }
     public string Binding => $"{CandidateSha}|{TargetRemoteRedacted}|{Branch}|{ReportSha256}|{PolicyHash}|{TargetBaseSha}";

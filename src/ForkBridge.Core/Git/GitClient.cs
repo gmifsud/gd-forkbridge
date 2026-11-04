@@ -14,6 +14,7 @@ public sealed class GitClient
     private readonly IProcessRunner _runner;
     public string GitExecutable { get; }
     public TimeSpan DefaultTimeout { get; init; } = TimeSpan.FromMinutes(20);
+    public static bool VerboseLogging { get; set; } = Environment.GetEnvironmentVariable("FORKBRIDGE_VERBOSE") == "1" || Environment.GetEnvironmentVariable("FORKBRIDGE_DEV") == "1";
 
     public GitClient(IProcessRunner runner, string gitExecutable = "git")
     {
@@ -50,6 +51,13 @@ public sealed class GitClient
         }, ct);
         // A killed git process is a cancellation, never a git failure or a "conflict".
         if (r.Cancelled) throw new OperationCanceledException($"git {string.Join(' ', args)} was cancelled.", ct);
+        if (VerboseLogging)
+        {
+            var repoName = Path.GetFileName(Path.TrimEndingDirectorySeparator(repoDir));
+            var cmdPreview = Redactor.Redact(string.Join(' ', argv.Skip(2)));
+            if (cmdPreview.Length > 120) cmdPreview = cmdPreview[..120] + "…";
+            Console.WriteLine($"[git] ({repoName}) {cmdPreview} -> exit {r.ExitCode} ({r.Duration.TotalMilliseconds:F0}ms)");
+        }
         return r;
     }
 

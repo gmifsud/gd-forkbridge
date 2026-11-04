@@ -132,6 +132,8 @@ public sealed class Simulator
         if (run.Conflict is not null)
         {
             var wt = run.CandidateWorktree;
+            if (run.Conflict.Instructions.Any(i => i.StartsWith("NOTHING WAS APPLIED", StringComparison.Ordinal)))
+                throw new PlanningException("Patch was rejected atomically and nothing was applied yet. Resolve or exclude the failing file(s) in the Conflict Resolver first.", ExitCodes.Blocked);
             var unmerged = await _git.LinesAsync(wt, "diff", "--name-only", "--diff-filter=U");
             var stillMarked = new List<string>();
             foreach (var f in run.Conflict.Files)
@@ -141,7 +143,10 @@ public sealed class Simulator
             }
             if (stillMarked.Count > 0)
                 throw new PlanningException($"Conflict markers remain in: {string.Join(", ", stillMarked)}. Resolve them in {wt} first.", ExitCodes.Blocked);
-            await _git.CheckedAsync(wt, ["add", "-A", "--", .. run.Conflict.Files], ct: ct);
+            if (run.Conflict.Files.Count > 0)
+                await _git.CheckedAsync(wt, ["add", "-A", "--", .. run.Conflict.Files], ct: ct);
+            else
+                await _git.CheckedAsync(wt, ["add", "-A"], ct: ct);
             if (unmerged.Except(run.Conflict.Files).Any())
                 throw new PlanningException($"Unexpected unmerged files: {string.Join(", ", unmerged.Except(run.Conflict.Files))}", ExitCodes.Blocked);
             var idx = run.NextCommitIndex;
@@ -650,4 +655,276 @@ public sealed class Simulator
         _git.RunAsync(mirror, ["worktree", "prune"]).GetAwaiter().GetResult();
         run.Log.Add("worktrees removed (branch, reports and evidence kept)");
     }
+
+    public async Task<List<ConflictFileDetail>> GetConflictDetailsAsync(string runId, CancellationToken ct = default)
+    {
+        var run = _store.LoadRun(runId);
+        if (run.Conflict is null) return [];
+        var plan = _store.LoadPlan(run.PlanId);
+        var mirror = _store.MirrorDir(_cfg.Pairs[plan.Pair].Products[plan.ToProduct]);
+        var wt = Path.GetFullPath(run.CandidateWorktree);
+        var pc = plan.Reconciliation ?? plan.Commits.ElementAtOrDefault(run.NextCommitIndex);
+        var srcCommit = run.Conflict.SourceCommit ?? plan.SourceHeadSha;
+        string? baseCommit;
+        if (plan.Reconciliation is not null)
+            baseCommit = plan.ReconcileBaseline ?? plan.MergeBase;
+        else if (pc is not null)
+        {
+            var info = await _git.GetCommitAsync(mirror, pc.Sha);
+            baseCommit = info.Parents.Length == 0 ? null : info.Parents[0];
+        }
+        else
+            baseCommit = plan.MergeBase;
+
+        var nothingApplied = run.Conflict.Instructions.Any(i => i.StartsWith("NOTHING WAS APPLIED", StringComparison.Ordinal));
+        var list = new List<ConflictFileDetail>();
+
+        foreach (var f in run.Conflict.Files)
+        {
+            var sanitized = StateStore.Sanitize(f.Replace('/', '_'));
+            var evDir = run.Conflict.EvidenceDir;
+            var pd = pc?.Paths.FirstOrDefault(p => p.TargetPath == f || p.SourcePath == f);
+            var srcPath = pd?.SourcePath ?? f;
+            var isBinary = pd?.Binary ?? false;
+
+            string? baseText = null, targetText = null, sourceText = null, wtText = null;
+            if (evDir is not null && File.Exists(Path.Combine(evDir, sanitized + ".base")))
+                baseText = await File.ReadAllTextAsync(Path.Combine(evDir, sanitized + ".base"), ct);
+            else if (baseCommit is not null && await _git.ObjectExistsAsync(mirror, $"{baseCommit}:{srcPath}"))
+            {
+                var b = await _git.ReadBlobAsync(mirror, baseCommit, srcPath) ?? [];
+                if (IsBinaryBlob(b)) isBinary = true; else baseText = DecodeUtf8(b);
+            }
+
+            if (evDir is not null && File.Exists(Path.Combine(evDir, sanitized + ".target")))
+                targetText = await File.ReadAllTextAsync(Path.Combine(evDir, sanitized + ".target"), ct);
+            else if (Directory.Exists(wt) && await _git.ObjectExistsAsync(wt, $"HEAD:{f}"))
+            {
+                var b = await _git.ReadBlobAsync(wt, "HEAD", f) ?? [];
+                if (IsBinaryBlob(b)) isBinary = true; else targetText = DecodeUtf8(b);
+            }
+            else if (await _git.ObjectExistsAsync(mirror, $"{plan.TargetBaseSha}:{f}"))
+            {
+                var b = await _git.ReadBlobAsync(mirror, plan.TargetBaseSha, f) ?? [];
+                if (IsBinaryBlob(b)) isBinary = true; else targetText = DecodeUtf8(b);
+            }
+
+            if (evDir is not null && File.Exists(Path.Combine(evDir, sanitized + ".source")))
+                sourceText = await File.ReadAllTextAsync(Path.Combine(evDir, sanitized + ".source"), ct);
+            else if (await _git.ObjectExistsAsync(mirror, $"{srcCommit}:{srcPath}"))
+            {
+                var b = await _git.ReadBlobAsync(mirror, srcCommit, srcPath) ?? [];
+                if (IsBinaryBlob(b)) isBinary = true; else sourceText = DecodeUtf8(b);
+            }
+
+            if (Directory.Exists(wt))
+            {
+                var full = Path.GetFullPath(Path.Combine(wt, f));
+                if (IsInsideWorktree(wt, full) && File.Exists(full))
+                {
+                    var b = await File.ReadAllBytesAsync(full, ct);
+                    if (IsBinaryBlob(b)) isBinary = true; else wtText = DecodeUtf8(b);
+                }
+            }
+
+            var hasMarkers = wtText is not null && Regex.IsMatch(wtText, @"^(<{7}|>{7})( |$)", RegexOptions.Multiline);
+            list.Add(new ConflictFileDetail
+            {
+                File = f,
+                SourcePath = srcPath,
+                WorkingTree = wtText,
+                HasConflictMarkers = hasMarkers,
+                BaseContent = baseText,
+                TargetContent = targetText,
+                SourceContent = sourceText,
+                NothingApplied = nothingApplied,
+                IsBinary = isBinary,
+            });
+        }
+        return list;
+    }
+
+    public async Task<List<ConflictFileDetail>> ResolveConflictFileAsync(string runId, ConflictResolutionRequest req, CancellationToken ct = default)
+    {
+        var run = _store.LoadRun(runId);
+        if (run.Conflict is null) throw new PlanningException($"Run {runId} has no active conflict.");
+        if (_store.Fs.ReadOwner(run.WorkspaceDir) != run.Id)
+            throw new Infrastructure.HarnessSafetyException($"Run directory of {runId} is not owned by it.");
+        var wt = Path.GetFullPath(run.CandidateWorktree);
+        if (!Directory.Exists(wt)) throw new PlanningException($"Workspace for {runId} no longer exists.");
+        var fullPath = Path.GetFullPath(Path.Combine(wt, req.File));
+        if (!_store.Fs.IsInsideRoot(fullPath) || !IsInsideWorktree(wt, fullPath))
+            throw new Infrastructure.HarnessSafetyException($"Refusing to write outside candidate worktree: {req.File}");
+
+        var plan = _store.LoadPlan(run.PlanId);
+        var mirror = _store.MirrorDir(_cfg.Pairs[plan.Pair].Products[plan.ToProduct]);
+        var pc = plan.Reconciliation ?? plan.Commits.ElementAtOrDefault(run.NextCommitIndex);
+        var pd = pc?.Paths.FirstOrDefault(p => p.TargetPath == req.File || p.SourcePath == req.File);
+        var srcPath = pd?.SourcePath ?? req.File;
+        var srcCommit = run.Conflict.SourceCommit ?? plan.SourceHeadSha;
+
+        // If `git apply` rejected the entire patch atomically ("NOTHING WAS APPLIED"), apply all non-conflicting
+        // files from the patch first so the rest of the commit/reconcile is staged in the worktree.
+        if (run.Conflict.Instructions.Any(i => i.StartsWith("NOTHING WAS APPLIED", StringComparison.Ordinal)) && pc is not null)
+        {
+            var pb = new PatchBuilder(_git, mirror);
+            string parent;
+            if (plan.Reconciliation is not null) parent = plan.ReconcileBaseline ?? plan.MergeBase!;
+            else
+            {
+                var info = await _git.GetCommitAsync(mirror, pc.Sha);
+                parent = info.Parents.Length == 0 ? "4b825dc642cb6eb9a060e54bf8d69288fbee4904" : info.Parents[0];
+            }
+            var safeDecisions = pc.Paths.Where(d => d.Decision == Decision.Include &&
+                !run.Conflict.Files.Contains(d.TargetPath ?? "") && !run.Conflict.Files.Contains(d.SourcePath)).ToList();
+            var patches = new List<byte[]>();
+            foreach (var d in safeDecisions)
+            {
+                var fp = await pb.FilePatchAsync(parent, srcCommit, d);
+                if (fp.Length > 0) patches.Add(fp);
+            }
+            if (patches.Count > 0)
+            {
+                var combined = PatchBuilder.Concat(patches);
+                var applyRes = await _git.RunAsync(wt, ["apply", "--3way", "--index", "--binary", "--whitespace=nowarn"], stdin: combined, ct: ct);
+                var unmerged = await _git.LinesAsync(wt, "diff", "--name-only", "--diff-filter=U");
+                if (!applyRes.Success && unmerged.Count == 0)
+                    throw new PlanningException($"Could not stage non-conflicting files from atomic patch: {applyRes.StdErr.Trim()}", ExitCodes.Blocked);
+                if (unmerged.Count > 0)
+                {
+                    var allConflictFiles = run.Conflict.Files.Union(unmerged, StringComparer.Ordinal).ToList();
+                    run.Conflict = run.Conflict with { Files = allConflictFiles };
+                }
+            }
+            run.Conflict = run.Conflict with
+            {
+                Instructions = run.Conflict.Instructions.Where(i => !i.StartsWith("NOTHING WAS APPLIED", StringComparison.Ordinal)).ToList(),
+            };
+        }
+
+        switch (req.Resolution)
+        {
+            case "target":
+            case "exclude":
+                if (await _git.ObjectExistsAsync(wt, $"HEAD:{req.File}"))
+                {
+                    var bytes = await _git.ReadBlobAsync(wt, "HEAD", req.File) ?? [];
+                    Directory.CreateDirectory(Path.GetDirectoryName(fullPath)!);
+                    await File.WriteAllBytesAsync(fullPath, bytes, ct);
+                    await _git.CheckedAsync(wt, ["add", "--", req.File], ct: ct);
+                }
+                else
+                {
+                    await _git.RunAsync(wt, ["rm", "-q", "-f", "--ignore-unmatch", "--", req.File], ct: ct);
+                    if (File.Exists(fullPath)) File.Delete(fullPath);
+                }
+                break;
+            case "source":
+                if (await _git.ObjectExistsAsync(mirror, $"{srcCommit}:{srcPath}"))
+                {
+                    var bytes = await _git.ReadBlobAsync(mirror, srcCommit, srcPath) ?? [];
+                    Directory.CreateDirectory(Path.GetDirectoryName(fullPath)!);
+                    await File.WriteAllBytesAsync(fullPath, bytes, ct);
+                    await _git.CheckedAsync(wt, ["add", "--", req.File], ct: ct);
+                }
+                else
+                {
+                    await _git.RunAsync(wt, ["rm", "-q", "-f", "--ignore-unmatch", "--", req.File], ct: ct);
+                    if (File.Exists(fullPath)) File.Delete(fullPath);
+                }
+                break;
+            case "custom":
+                if (req.Content is null) throw new ArgumentException("Content is required for custom conflict resolution.");
+                if (Regex.IsMatch(req.Content, @"^(<{7}|={7}|>{7})( |$)", RegexOptions.Multiline))
+                    throw new PlanningException($"Resolved content for {req.File} still contains git conflict markers.", ExitCodes.Blocked);
+
+                byte[]? referenceBytes = null;
+                if (await _git.ObjectExistsAsync(wt, $"HEAD:{req.File}"))
+                    referenceBytes = await _git.ReadBlobAsync(wt, "HEAD", req.File);
+                else if (await _git.ObjectExistsAsync(mirror, $"{srcCommit}:{srcPath}"))
+                    referenceBytes = await _git.ReadBlobAsync(mirror, srcCommit, srcPath);
+                else if (File.Exists(fullPath))
+                    referenceBytes = await File.ReadAllBytesAsync(fullPath, ct);
+
+                if ((pd?.Binary ?? false) || (referenceBytes is not null && IsBinaryBlob(referenceBytes)))
+                    throw new PlanningException($"Cannot apply custom text resolution to binary file '{req.File}'. Choose target or source.", ExitCodes.Blocked);
+
+                Directory.CreateDirectory(Path.GetDirectoryName(fullPath)!);
+                var encoded = EncodePreservingBomAndEol(req.Content, referenceBytes);
+                await File.WriteAllBytesAsync(fullPath, encoded, ct);
+                await _git.CheckedAsync(wt, ["add", "--", req.File], ct: ct);
+                break;
+            default:
+                throw new ArgumentException($"Unsupported resolution kind '{req.Resolution}' (expected target | source | custom | exclude).");
+        }
+
+        run.Log.Add($"conflict resolved ({req.Resolution}): {req.File}");
+        _store.SaveRun(run);
+        return await GetConflictDetailsAsync(runId, ct);
+    }
+
+    private static bool IsBinaryBlob(byte[] bytes)
+        => bytes.AsSpan(0, Math.Min(bytes.Length, 8000)).IndexOf((byte)0) >= 0;
+
+    private static string DecodeUtf8(byte[] bytes)
+    {
+        if (bytes.Length >= 3 && bytes[0] == 0xEF && bytes[1] == 0xBB && bytes[2] == 0xBF)
+            return Encoding.UTF8.GetString(bytes, 3, bytes.Length - 3);
+        return Encoding.UTF8.GetString(bytes);
+    }
+
+    private static byte[] EncodePreservingBomAndEol(string content, byte[]? referenceBytes)
+    {
+        var hasBom = referenceBytes is { Length: >= 3 } && referenceBytes[0] == 0xEF && referenceBytes[1] == 0xBB && referenceBytes[2] == 0xBF;
+        var normalized = content.Replace("\r\n", "\n");
+        if (referenceBytes is { Length: > 0 })
+        {
+            var crlfCount = 0;
+            var lfOnlyCount = 0;
+            for (var i = 0; i < referenceBytes.Length; i++)
+            {
+                if (referenceBytes[i] == (byte)'\n')
+                {
+                    if (i > 0 && referenceBytes[i - 1] == (byte)'\r') crlfCount++;
+                    else lfOnlyCount++;
+                }
+            }
+            if (crlfCount > lfOnlyCount)
+                normalized = normalized.Replace("\n", "\r\n");
+        }
+        var bodyBytes = Encoding.UTF8.GetBytes(normalized);
+        if (!hasBom) return bodyBytes;
+        var withBom = new byte[3 + bodyBytes.Length];
+        withBom[0] = 0xEF; withBom[1] = 0xBB; withBom[2] = 0xBF;
+        Buffer.BlockCopy(bodyBytes, 0, withBom, 3, bodyBytes.Length);
+        return withBom;
+    }
+
+    private static bool IsInsideWorktree(string wtFull, string candidateFull)
+    {
+        var w = Path.TrimEndingDirectorySeparator(wtFull);
+        var c = Path.TrimEndingDirectorySeparator(candidateFull);
+        var cmp = OperatingSystem.IsWindows() ? StringComparison.OrdinalIgnoreCase : StringComparison.Ordinal;
+        return c.StartsWith(w + Path.DirectorySeparatorChar, cmp);
+    }
+}
+
+public sealed record ConflictFileDetail
+{
+    public required string File { get; init; }
+    public string? SourcePath { get; init; }
+    public string? WorkingTree { get; init; }
+    public bool HasConflictMarkers { get; init; }
+    public string? BaseContent { get; init; }
+    public string? TargetContent { get; init; }
+    public string? SourceContent { get; init; }
+    public bool NothingApplied { get; init; }
+    public bool IsBinary { get; init; }
+}
+
+public sealed record ConflictResolutionRequest
+{
+    public required string File { get; init; }
+    public required string Resolution { get; init; }
+    public string? Content { get; init; }
 }

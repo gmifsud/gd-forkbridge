@@ -30,6 +30,20 @@ public sealed record PlanRequest
     public string? Baseline { get; init; }
     /// <summary>Source commits to re-apply even though provenance says they were transferred.</summary>
     public List<string> Reapply { get; init; } = new();
+    /// <summary>Per-file decision overrides (source path -> Include or Exclude).</summary>
+    public Dictionary<string, Decision> PathOverrides { get; init; } = new();
+    /// <summary>Finding IDs or codes (or "*") whose blocking status is downgraded to review-required.</summary>
+    public List<string> OverriddenFindings { get; init; } = new();
+}
+
+public sealed record PlanResolutionRequest
+{
+    public Dictionary<string, Decision>? PathOverrides { get; init; }
+    public List<string>? OverrideFindings { get; init; }
+    public List<string>? AcceptFindings { get; init; }
+    public Decision? DefaultFileDecision { get; init; }
+    public bool UnblockAll { get; init; }
+    public List<string>? Reapply { get; init; }
 }
 
 public sealed class PlanningException(string message, int exitCode = ExitCodes.UsageError) : Exception(message)
@@ -45,6 +59,13 @@ public sealed class Planner
     private readonly GitClient _git;
     private readonly StateStore _store;
     private readonly MirrorManager _mirrors;
+
+    private static readonly string[] PathAndPolicyBlockerCodes =
+    [
+        "PATH_BLOCKED", "UNKNOWN_PATH", "MODIFY_DELETE", "RENAME_ACROSS_BOUNDARY",
+        "PRODUCT_CONTAMINATION", "UNMAPPED_SHARED_PATHS", "TARGET_PINNED_MODIFIED",
+        "GENERATED_CHANGED", "MISSING_SHARED_DEPENDENCY",
+    ];
 
     public Planner(ForkBridgeConfig cfg, GitClient git, StateStore store, MirrorManager mirrors)
     {
@@ -155,34 +176,144 @@ public sealed class Planner
             default: throw new PlanningException("Unsupported selection mode.");
         }
 
-        var shared = await _git.MergeBaseAsync(mirror, sourceHead, tgtBase.Sha);
+        var sourceIdentity = await IdentityAsync(srcAlias, req.From, srcSync, mirror, sourceHead);
+        var targetIdentity = await IdentityAsync(tgtAlias, req.To, tgtSync, mirror, tgtBase.Sha);
+
+        return await ExecutePlanCoreAsync(pair, req, mirror, sourceHead, sourceBaseSha,
+            req.Mode == SelectionMode.Feature ? sourceBaseName : null,
+            tgtBase.Sha, targetBaseName, mergeBase, explanation, rangeExpr, commitList,
+            sourceIdentity, targetIdentity, freshness, findings, parentPlanId: null, acceptedFindings: [], ct);
+    }
+
+    /// <summary>Creates a new immutable derived plan from <paramref name="planId"/> with file decision
+    /// overrides, finding overrides, accepted review items, or updated policy rules from the current
+    /// config. The original plan and its patch artifacts are never mutated.</summary>
+    public async Task<Plan> ResolvePlanAsync(string planId, PlanResolutionRequest res, CancellationToken ct = default)
+    {
+        var plan = _store.LoadPlan(planId);
+        if (!_cfg.Pairs.TryGetValue(plan.Pair, out var pair))
+            throw new PlanningException($"Unknown pair '{plan.Pair}'.");
+
+        var pathOverrides = new Dictionary<string, Decision>(plan.PathOverrides ?? new(), StringComparer.Ordinal);
+        if (res.PathOverrides is not null)
+        {
+            foreach (var (k, v) in res.PathOverrides)
+                pathOverrides[k] = v;
+        }
+
+        var overriddenFindings = (plan.OverriddenFindings ?? []).ToHashSet(StringComparer.Ordinal);
+        if (res.OverrideFindings is not null)
+        {
+            foreach (var f in res.OverrideFindings.Where(x => !string.IsNullOrWhiteSpace(x)))
+                overriddenFindings.Add(f);
+        }
+
+        var acceptedFindings = plan.AcceptedFindings.ToHashSet(StringComparer.Ordinal);
+        if (res.AcceptFindings is not null)
+        {
+            foreach (var f in res.AcceptFindings.Where(x => !string.IsNullOrWhiteSpace(x)))
+                acceptedFindings.Add(f);
+        }
+
+        if (res.UnblockAll)
+        {
+            foreach (var code in PathAndPolicyBlockerCodes)
+                overriddenFindings.Add(code);
+            foreach (var f in plan.Findings.Where(f => f.Blocking))
+                overriddenFindings.Add(f.Id);
+            foreach (var d in plan.Commits.SelectMany(c => c.Paths).Concat(plan.Reconciliation?.Paths ?? []))
+            {
+                if (d.Decision == Decision.Block && !pathOverrides.ContainsKey(d.SourcePath))
+                    pathOverrides[d.SourcePath] = res.DefaultFileDecision ?? Decision.Exclude;
+            }
+        }
+
+        // If the user overrode a specific path-blocking finding without specifying per-file decisions,
+        // apply DefaultFileDecision (defaulting to Exclude) to those files so the commit/reconcile unblocks.
+        foreach (var f in plan.Findings.Where(f => f.Blocking && (overriddenFindings.Contains(f.Id) || overriddenFindings.Contains(f.Code) || overriddenFindings.Contains("*"))))
+        {
+            if (f.Code is "PATH_BLOCKED" or "UNKNOWN_PATH" or "MODIFY_DELETE" or "RENAME_ACROSS_BOUNDARY")
+            {
+                foreach (var file in f.Files)
+                {
+                    if (!pathOverrides.ContainsKey(file))
+                        pathOverrides[file] = res.DefaultFileDecision ?? Decision.Exclude;
+                }
+            }
+        }
+
+        var tgtAlias = pair.Products[plan.ToProduct];
+        var mirror = _store.MirrorDir(tgtAlias);
+        if (!Directory.Exists(mirror))
+        {
+            var srcAlias = pair.Products[plan.FromProduct];
+            var srcSync = await _mirrors.SyncAsync(srcAlias, offline: true, ct);
+            var tgtSync = await _mirrors.SyncAsync(tgtAlias, offline: true, ct);
+            await _mirrors.FetchPeerAsync(tgtSync.MirrorDir, srcAlias, srcSync.MirrorDir, ct);
+        }
+
+        var allowProposed = plan.AllowProposed
+            || plan.Findings.Any(f => f.Code == "PROPOSED_COMPONENTS")
+            || pair.Components.Where(c => plan.SelectedComponents.Contains(c.Id)).Any(c => c.Status == "proposed");
+
+        var req = new PlanRequest
+        {
+            Pair = plan.Pair, From = plan.FromProduct, To = plan.ToProduct, Mode = plan.Mode,
+            SourceRef = plan.SourceRef, SourceBase = plan.SourceBaseRef, TargetBase = plan.TargetBaseRef,
+            Components = plan.SelectedComponents, AllowProposed = allowProposed, Offline = plan.Freshness.Offline,
+            Baseline = plan.ReconcileBaseline, Reapply = res.Reapply ?? [.. (plan.Reapply ?? [])],
+            PathOverrides = pathOverrides, OverriddenFindings = overriddenFindings.ToList(),
+        };
+
+        var initialFindings = new List<Finding>();
+        if (plan.Freshness.Offline)
+        {
+            var existingOffline = plan.Findings.FirstOrDefault(f => f.Code == "OFFLINE_REFS");
+            if (existingOffline is not null) initialFindings.Add(existingOffline);
+        }
+
+        var commitList = plan.Commits.Select(c => c.Sha).ToList();
+        var mergeBase = plan.Mode is SelectionMode.Reconcile or SelectionMode.Merge ? (plan.ReconcileBaseline ?? plan.MergeBase) : plan.MergeBase;
+
+        return await ExecutePlanCoreAsync(pair, req, mirror, plan.SourceHeadSha, plan.SourceBaseSha,
+            plan.SourceBaseRef, plan.TargetBaseSha, plan.TargetBaseRef, mergeBase, plan.MergeBaseExplanation,
+            plan.RangeExpression, commitList, plan.Source, plan.Target, plan.Freshness, initialFindings,
+            parentPlanId: plan.Id, acceptedFindings: acceptedFindings.ToList(), ct);
+    }
+
+    private async Task<Plan> ExecutePlanCoreAsync(
+        PairConfig pair, PlanRequest req, string mirror, string sourceHead, string? sourceBaseSha, string? sourceBaseName,
+        string targetBaseSha, string targetBaseName, string? mergeBase, string? explanation, string? rangeExpr,
+        List<string> commitList, RepoIdentity sourceIdentity, RepoIdentity targetIdentity, Freshness freshness,
+        List<Finding> findings, string? parentPlanId, List<string> acceptedFindings, CancellationToken ct)
+    {
+        var tgtAlias = pair.Products[req.To];
+        var shared = await _git.MergeBaseAsync(mirror, sourceHead, targetBaseSha);
         if (shared is null)
             findings.Add(new Finding
             {
-                Id = Finding.MakeId("NO_SHARED_HISTORY", sourceHead, tgtBase.Sha), Code = "NO_SHARED_HISTORY", Category = "history",
+                Id = Finding.MakeId("NO_SHARED_HISTORY", sourceHead, targetBaseSha), Code = "NO_SHARED_HISTORY", Category = "history",
                 Severity = Severity.Warning, Origin = Origin.PreExisting, Title = "Source and target share no history",
-                Evidence = [$"git merge-base {sourceHead[..10]} {tgtBase.Sha[..10]} found nothing."],
+                Evidence = [$"git merge-base {sourceHead[..10]} {targetBaseSha[..10]} found nothing."],
                 SuggestedAction = "Three-way application has less context; expect conflicts.",
             });
 
-        // 3. Component selection.
         var selected = SelectComponents(pair, req, findings);
         var srcCls = new PathClassifier(pair, req.From, asTarget: false);
         var tgtCls = new PathClassifier(pair, req.To, asTarget: true);
-        var tgtTreeFiles = (await _git.LsTreeAsync(mirror, tgtBase.Sha)).Where(e => e.Type == "blob").Select(e => e.Path).ToHashSet(StringComparer.Ordinal);
+        var tgtTreeFiles = (await _git.LsTreeAsync(mirror, targetBaseSha)).Where(e => e.Type == "blob").Select(e => e.Path).ToHashSet(StringComparer.Ordinal);
         var planId = StateStore.NewId("pl");
         var planDir = _store.PlanDir(planId);
         _store.Fs.CreateOwnedDirectory(planDir, planId);
         var scratch = Path.Combine(planDir, "scratch");
         var patches = new PatchBuilder(_git, mirror);
-        var priors = await PriorTransfersAsync(mirror, tgtBase.Sha);
-        var targetPatchIds = await TargetPatchIdsAsync(mirror, shared, tgtBase.Sha, selected, req.To);
+        var priors = await PriorTransfersAsync(mirror, targetBaseSha);
+        var targetPatchIds = await TargetPatchIdsAsync(mirror, shared, targetBaseSha, selected, req.To);
         var gitVersion = await _git.VersionAsync();
         var analyzerChanges = new List<AnalyzedChange>();
         var plannedCommits = new List<PlannedCommit>();
         PlannedCommit? reconciliation = null;
 
-        // Missing components in the target (configured path not present at the target base).
         foreach (var c in selected)
         {
             var tp = c.Paths.GetValueOrDefault(req.To);
@@ -194,7 +325,7 @@ public sealed class Planner
                     Id = Finding.MakeId("COMPONENT_MISSING_IN_TARGET", c.Id, req.To), Code = "COMPONENT_MISSING_IN_TARGET", Category = "prerequisite",
                     Severity = Severity.Warning, Origin = Origin.PreExisting, Component = c.Id, RequiresReview = true,
                     Title = $"Component '{c.Id}' has no files at '{norm}' in the target",
-                    Evidence = [$"{tgtAlias}@{tgtBase.Sha[..10]} contains nothing under {norm}. It is MISSING (not declared intentionally absent)."],
+                    Evidence = [$"{tgtAlias}@{targetBaseSha[..10]} contains nothing under {norm}. It is MISSING (not declared intentionally absent)."],
                     SuggestedAction = "If the component should exist in the target, transfer it (new shared component) and accept this finding; otherwise declare it under 'absent'.",
                 });
         }
@@ -203,15 +334,15 @@ public sealed class Planner
         {
             var changes = await _git.DiffTreeAsync(mirror, mergeBase!, sourceHead);
             var decisions = changes.Select(ch => Decide(ch, pair, req, selected, srcCls, tgtCls, findings, "reconcile")).ToList();
-            decisions = await FollowTargetRenamesAsync(mirror, shared ?? mergeBase!, tgtBase.Sha, decisions, tgtTreeFiles, findings, "reconcile");
+            decisions = await FollowTargetRenamesAsync(mirror, shared ?? mergeBase!, targetBaseSha, decisions, tgtTreeFiles, req, findings, "reconcile");
             reconciliation = await BuildPlannedCommitAsync(mirror, new CommitInfo("reconcile:" + sourceHead, [mergeBase!], "ForkBridge reconciliation", "", DateTimeOffset.UtcNow.ToString("o"), "", "", "",
                     $"Reconcile {req.From} -> {req.To} snapshot {sourceHead[..10]}"), mergeBase!, sourceHead, decisions, patches, planDir, "reconcile.patch",
-                tgtBase.Sha, scratch, priors, targetPatchIds, req, findings, reconcile: true);
+                targetBaseSha, scratch, priors, targetPatchIds, req, findings, reconcile: true);
             analyzerChanges.AddRange(decisions.Select(d => new AnalyzedChange(sourceHead, mergeBase!, d)));
             if (req.Mode == SelectionMode.Merge)
                 findings.Add(new Finding
                 {
-                    Id = Finding.MakeId("MERGE_ANCESTRY", sourceHead, tgtBase.Sha), Code = "MERGE_ANCESTRY", Category = "history", Severity = Severity.Warning,
+                    Id = Finding.MakeId("MERGE_ANCESTRY", sourceHead, targetBaseSha), Code = "MERGE_ANCESTRY", Category = "history", Severity = Severity.Warning,
                     Title = "Full-history merge records excluded content as merged", RequiresReview = true,
                     Evidence = ["Merge mode makes every source commit an ancestor of the target, including product-specific and pinned paths that are discarded.",
                                 "Later merges/merge-bases will treat that content as already integrated."],
@@ -241,9 +372,9 @@ public sealed class Planner
                 var parent = info.Parents.Length == 0 ? await _mirrors.EmptyTreeAsync(mirror) : info.Parents[0];
                 var changes = await _git.DiffTreeAsync(mirror, parent, sha);
                 var decisions = changes.Select(ch => Decide(ch, pair, req, selected, srcCls, tgtCls, findings, sha)).ToList();
-                if (shared is not null) decisions = await FollowTargetRenamesAsync(mirror, shared, tgtBase.Sha, decisions, tgtTreeFiles, findings, sha);
+                if (shared is not null) decisions = await FollowTargetRenamesAsync(mirror, shared, targetBaseSha, decisions, tgtTreeFiles, req, findings, sha);
                 var pc = await BuildPlannedCommitAsync(mirror, info, parent, sha, decisions, patches, planDir, $"{idx:D4}-{sha[..12]}.patch",
-                    tgtBase.Sha, scratch, priors, targetPatchIds, req, findings);
+                    targetBaseSha, scratch, priors, targetPatchIds, req, findings);
                 plannedCommits.Add(pc);
                 analyzerChanges.AddRange(decisions.Select(d => new AnalyzedChange(sha, parent, d)));
             }
@@ -270,37 +401,90 @@ public sealed class Planner
             }
         }
 
-        // 4. Drift between pinned snapshots, per selected component.
-        var drift = await DriftAnalyzer.AnalyzeAsync(_git, mirror, pair, req.From, req.To, sourceHead, tgtBase.Sha, shared ?? mergeBase, selected);
-        findings.AddRange(DriftAnalyzer.Findings(drift, sourceHead, tgtBase.Sha, shared));
+        var drift = await DriftAnalyzer.AnalyzeAsync(_git, mirror, pair, req.From, req.To, sourceHead, targetBaseSha, shared ?? mergeBase, selected, req.PathOverrides);
+        findings.AddRange(DriftAnalyzer.Findings(drift, sourceHead, targetBaseSha, shared));
 
-        // 5. Dependency / compatibility analysis (static).
-        var tgtGraph = await DependencyGraph.BuildAsync(_git, mirror, tgtBase.Sha);
+        var tgtGraph = await DependencyGraph.BuildAsync(_git, mirror, targetBaseSha);
         var srcGraph = await DependencyGraph.BuildAsync(_git, mirror, sourceHead);
         var pendingShas = plannedCommits.Where(p => p.State == CommitState.Pending).Select(p => p.Sha).ToHashSet();
         var relevant = analyzerChanges.Where(a => pendingShas.Contains(a.SourceCommit) || reconciliation is not null).ToList();
         var analyzer = new DependencyAnalyzer(_git, mirror, pair, req.From, req.To);
-        var (depFindings, impact) = await analyzer.AnalyzeAsync(relevant, sourceHead, tgtBase.Sha, tgtGraph, srcGraph);
+        var (depFindings, impact) = await analyzer.AnalyzeAsync(relevant, sourceHead, targetBaseSha, tgtGraph, srcGraph);
         findings.AddRange(depFindings);
 
         try { if (Directory.Exists(scratch)) Directory.Delete(scratch, true); } catch { }
 
+        var deduped = Dedupe(findings);
+        ApplyFindingOverrides(deduped, req.OverriddenFindings, plannedCommits);
+
         var plan = new Plan
         {
-            Id = planId, CreatedAt = DateTimeOffset.UtcNow, Pair = req.Pair, FromProduct = req.From, ToProduct = req.To,
-            Source = await IdentityAsync(srcAlias, req.From, srcSync, mirror, sourceHead),
-            Target = await IdentityAsync(tgtAlias, req.To, tgtSync, mirror, tgtBase.Sha),
-            Mode = req.Mode, SourceRef = req.SourceRef, SourceBaseRef = req.Mode == SelectionMode.Feature ? sourceBaseName : null,
-            TargetBaseRef = targetBaseName, SourceHeadSha = sourceHead, SourceBaseSha = sourceBaseSha, TargetBaseSha = tgtBase.Sha,
+            Id = planId, ParentPlanId = parentPlanId, CreatedAt = DateTimeOffset.UtcNow,
+            Pair = req.Pair, FromProduct = req.From, ToProduct = req.To,
+            Source = sourceIdentity, Target = targetIdentity,
+            Mode = req.Mode, SourceRef = req.SourceRef, SourceBaseRef = sourceBaseName,
+            TargetBaseRef = targetBaseName, SourceHeadSha = sourceHead, SourceBaseSha = sourceBaseSha, TargetBaseSha = targetBaseSha,
             MergeBase = mergeBase, MergeBaseExplanation = explanation, RangeExpression = rangeExpr,
-            SelectedComponents = selected.Select(c => c.Id).ToList(), Commits = plannedCommits, Reconciliation = reconciliation,
+            SelectedComponents = selected.Select(c => c.Id).ToList(), AllowProposed = req.AllowProposed,
+            Reapply = req.Reapply.Count > 0 ? [.. req.Reapply] : null,
+            Commits = plannedCommits, Reconciliation = reconciliation,
             ReconcileBaseline = req.Mode is SelectionMode.Reconcile or SelectionMode.Merge ? mergeBase : null,
-            Drift = drift, Findings = Dedupe(findings), PolicyHash = ConfigLoader.PolicyHash(_cfg, req.Pair), Freshness = freshness,
+            Drift = drift, Findings = deduped, PolicyHash = ConfigLoader.PolicyHash(_cfg, req.Pair), Freshness = freshness,
             Impact = impact,
+            PathOverrides = req.PathOverrides.Count > 0 ? new Dictionary<string, Decision>(req.PathOverrides) : null,
+            OverriddenFindings = req.OverriddenFindings.Count > 0 ? [.. req.OverriddenFindings] : null,
+            AcceptedFindings = [.. acceptedFindings],
         };
         plan.PreliminaryStatus = StatusEvaluator.ForPlan(plan);
         _store.SavePlan(plan);
         return plan;
+    }
+
+    private static void ApplyFindingOverrides(List<Finding> findings, List<string> overridden, List<PlannedCommit> commits)
+    {
+        if (overridden.Count == 0) return;
+        bool all = overridden.Contains("*");
+        var skippedMerges = new List<string>();
+        for (int i = 0; i < findings.Count; i++)
+        {
+            var f = findings[i];
+            if (f.Blocking && (all || overridden.Contains(f.Id) || overridden.Contains(f.Code)))
+            {
+                findings[i] = f with
+                {
+                    Blocking = false,
+                    RequiresReview = true,
+                    Severity = Severity.Warning,
+                    Title = f.Title.EndsWith("[OVERRIDDEN]", StringComparison.Ordinal) ? f.Title : f.Title + " [OVERRIDDEN]",
+                };
+            }
+        }
+        foreach (var c in commits)
+        {
+            if (c.State == CommitState.Blocked && c.Paths.All(p => p.Decision != Decision.Block))
+            {
+                var matchingFindingIds = findings.Where(f => f.Commits.Contains(c.Sha)).Select(f => f.Id).ToList();
+                if (all || overridden.Contains(c.Sha) || matchingFindingIds.Any(overridden.Contains) ||
+                    overridden.Contains("OCTOPUS_MERGE") || overridden.Contains("MERGE_UNVERIFIABLE") || overridden.Contains("MERGE_RESOLUTION_CHANGES"))
+                {
+                    c.State = CommitState.NothingToTransfer;
+                    c.StateEvidence = (c.StateEvidence ?? "") + " (skipped by override)";
+                    skippedMerges.Add(c.Sha);
+                }
+            }
+        }
+        if (skippedMerges.Count > 0)
+        {
+            findings.Add(new Finding
+            {
+                Id = Finding.MakeId("MERGE_COMMIT_SKIPPED", string.Join(",", skippedMerges)),
+                Code = "MERGE_COMMIT_SKIPPED", Category = "merge", Severity = Severity.Warning, RequiresReview = true,
+                Commits = skippedMerges,
+                Title = $"{skippedMerges.Count} blocked merge commit(s) skipped by override",
+                Evidence = skippedMerges.Select(s => $"Merge commit {s[..Math.Min(10, s.Length)]} was skipped; only its non-merge constituent commits are transferred.").ToList(),
+                SuggestedAction = "Confirm that no conflict-resolution-only edits in the merge commit are needed in the target.",
+            });
+        }
     }
 
     // ---------------------------------------------------------------------------------------------
@@ -358,7 +542,7 @@ public sealed class Planner
     /// so it is re-addressed to the renamed path. A file the target deleted is a modify/delete
     /// conflict and blocks with evidence at plan time instead of failing during simulation.</summary>
     private async Task<List<PathDecision>> FollowTargetRenamesAsync(string mirror, string baseline, string targetBase,
-        List<PathDecision> decisions, HashSet<string> targetFiles, List<Finding> findings, string commit)
+        List<PathDecision> decisions, HashSet<string> targetFiles, PlanRequest req, List<Finding> findings, string commit)
     {
         var key = $"{mirror}|{baseline}|{targetBase}";
         if (!_targetRenames.TryGetValue(key, out var renames))
@@ -393,6 +577,33 @@ public sealed class Planner
                 });
                 continue;
             }
+            if (TryGetPathOverride(req.PathOverrides, d.SourcePath, out var ov, out var ovRule)
+                || (d.TargetPath is not null && TryGetPathOverride(req.PathOverrides, d.TargetPath, out ov, out ovRule)))
+            {
+                if (ov == Decision.Exclude)
+                {
+                    result.Add(d with { Decision = Decision.Exclude, Reason = $"excluded by override '{ovRule}' (deleted in target)" });
+                    continue;
+                }
+                if (ov == Decision.Include)
+                {
+                    if (d.Status == 'D')
+                    {
+                        result.Add(d with { Decision = Decision.Exclude, Reason = "already deleted in target (override)" });
+                        continue;
+                    }
+                    result.Add(d with { Decision = Decision.Include, Status = 'A', Reason = d.Reason + " [restore-in-target]" });
+                    findings.Add(new Finding
+                    {
+                        Id = Finding.MakeId("MODIFY_DELETE_RESTORED", commit, d.SourcePath), Code = "MODIFY_DELETE_RESTORED", Category = "conflict",
+                        Severity = Severity.Warning, RequiresReview = true, Component = d.Component, Files = [d.SourcePath],
+                        Title = "Target-deleted file restored by override",
+                        Evidence = [$"{d.SourcePath} -> {addr} will be re-created in the target."],
+                        SuggestedAction = "Verify the restored file compiles cleanly in the target.",
+                    });
+                    continue;
+                }
+            }
             result.Add(d with { Decision = Decision.Block, Reason = $"{(d.Status == 'D' ? "deleted" : "modified")} in source, but '{addr}' no longer exists in the target (deleted since the baseline)" });
             findings.Add(new Finding
             {
@@ -404,6 +615,27 @@ public sealed class Planner
             });
         }
         return result;
+    }
+
+    public static bool TryGetPathOverride(IReadOnlyDictionary<string, Decision>? overrides, string? path, out Decision decision, out string? matchedRule)
+    {
+        decision = default;
+        matchedRule = null;
+        if (overrides is null || overrides.Count == 0 || string.IsNullOrWhiteSpace(path)) return false;
+        var norm = Glob.Normalize(path);
+        if (overrides.TryGetValue(path, out decision)) { matchedRule = path; return true; }
+        if (overrides.TryGetValue(norm, out decision)) { matchedRule = norm; return true; }
+        var match = overrides
+            .Where(kv => Glob.IsMatch(kv.Key, norm))
+            .OrderByDescending(kv => Glob.Specificity(kv.Key))
+            .FirstOrDefault();
+        if (match.Key is not null)
+        {
+            decision = match.Value;
+            matchedRule = match.Key;
+            return true;
+        }
+        return false;
     }
 
     private static PathDecision Decide(FileChange ch, PairConfig pair, PlanRequest req, List<ComponentConfig> selected,
@@ -448,6 +680,49 @@ public sealed class Planner
         }
 
         var cur = One(ch.Path);
+        if (TryGetPathOverride(req.PathOverrides, ch.Path, out var ov, out var ovRule)
+            || (ch.OldPath is not null && TryGetPathOverride(req.PathOverrides, ch.OldPath, out ov, out ovRule))
+            || (cur.mapped is not null && TryGetPathOverride(req.PathOverrides, cur.mapped, out ov, out ovRule)))
+        {
+            var oldInfo = ch.OldPath is not null ? One(ch.OldPath) : default;
+            if (ov == Decision.Exclude)
+            {
+                return new PathDecision
+                {
+                    SourcePath = ch.Path, SourceOldPath = ch.OldPath, TargetPath = cur.mapped, TargetOldPath = oldInfo.mapped, Status = ch.Status,
+                    SourceClass = cur.srcClass, TargetClass = cur.tgtClass, Component = cur.comp ?? oldInfo.comp,
+                    Decision = Decision.Exclude, Reason = $"excluded by override '{ovRule}' ({cur.reason})", Binary = ch.IsBinary,
+                };
+            }
+            if (ov == Decision.Include)
+            {
+                var mappedPath = cur.mapped ?? (srcCls.ComponentOf(ch.Path) is { } mc ? PathClassifier.MapPath(mc, req.From, req.To, ch.Path) : null) ?? Glob.Normalize(ch.Path);
+                var oldMapped = ch.OldPath is not null
+                    ? oldInfo.mapped ?? (srcCls.ComponentOf(ch.OldPath) is { } oc ? PathClassifier.MapPath(oc, req.From, req.To, ch.OldPath) : null) ?? Glob.Normalize(ch.OldPath)
+                    : null;
+                var compId = cur.comp ?? oldInfo.comp ?? selected.FirstOrDefault()?.Id ?? "override";
+                if (cur.d != Decision.Include)
+                {
+                    findings.Add(new Finding
+                    {
+                        Id = Finding.MakeId("PATH_OVERRIDE_INCLUDED", commit, ch.Path),
+                        Code = "PATH_OVERRIDE_INCLUDED", Category = "policy", Severity = Severity.Warning,
+                        RequiresReview = true, Component = compId, Files = [ch.Path],
+                        Commits = commit.StartsWith("reconcile") ? [] : [commit],
+                        Title = $"File force-included by override (was {cur.d}: {cur.srcClass})",
+                        Evidence = [$"{ch.Status} {ch.Path} -> {mappedPath} (original policy decision: {cur.d} - {cur.reason})"],
+                        SuggestedAction = "Confirm this file should be transferred despite the policy classification.",
+                    });
+                }
+                return new PathDecision
+                {
+                    SourcePath = ch.Path, SourceOldPath = ch.OldPath, TargetPath = mappedPath, TargetOldPath = oldMapped, Status = ch.Status,
+                    SourceClass = cur.srcClass, TargetClass = cur.tgtClass, Component = compId,
+                    Decision = Decision.Include, Reason = $"included by override ({cur.reason})", Binary = ch.IsBinary,
+                };
+            }
+        }
+
         if (ch.IsRename || ch.IsCopy)
         {
             var old = One(ch.OldPath!);
@@ -700,4 +975,241 @@ public sealed class Planner
     };
 
     private static List<Finding> Dedupe(List<Finding> f) => f.GroupBy(x => x.Id).Select(g => g.First()).ToList();
+
+    public async Task<PlanFileDiffResult> GetFileDiffAsync(string planId, string rawPath, string? commitSha = null, CancellationToken ct = default)
+    {
+        var plan = _store.LoadPlan(planId);
+        var pair = _cfg.Pairs.TryGetValue(plan.Pair, out var p) ? p : throw new PlanningException($"Unknown pair '{plan.Pair}'.");
+        var srcAlias = pair.Products[plan.FromProduct];
+        var tgtAlias = pair.Products[plan.ToProduct];
+        var mirror = _store.MirrorDir(tgtAlias);
+
+        var checkHead = await _git.RunAsync(mirror, ["cat-file", "-e", $"{plan.SourceHeadSha}^{{commit}}"], ct: ct);
+        if (!checkHead.Success)
+        {
+            var srcMirror = _store.MirrorDir(srcAlias);
+            if (Directory.Exists(srcMirror))
+                await _mirrors.FetchPeerAsync(mirror, srcAlias, srcMirror, ct);
+        }
+
+        var clean = rawPath.Trim();
+        var parenIdx = clean.LastIndexOf(" (", StringComparison.Ordinal);
+        if (parenIdx > 0 && clean.EndsWith(')'))
+            clean = clean[..parenIdx].Trim();
+        var norm = Glob.Normalize(clean);
+
+        var allPlannedCommits = plan.Commits.Concat(plan.Reconciliation is null ? [] : [plan.Reconciliation]).ToList();
+        var matchDecision = allPlannedCommits
+            .SelectMany(c => c.Paths.Select(d => (commit: c, decision: d)))
+            .FirstOrDefault(x =>
+                Glob.Normalize(x.decision.SourcePath) == norm ||
+                (x.decision.TargetPath is not null && Glob.Normalize(x.decision.TargetPath) == norm) ||
+                (x.decision.SourceOldPath is not null && Glob.Normalize(x.decision.SourceOldPath) == norm));
+
+        string srcPath = norm;
+        string tgtPath = norm;
+        string? component = null;
+        string? decision = null;
+        string? reason = null;
+
+        if (matchDecision.decision is not null)
+        {
+            srcPath = Glob.Normalize(matchDecision.decision.SourcePath);
+            tgtPath = Glob.Normalize(matchDecision.decision.TargetPath ?? matchDecision.decision.SourcePath);
+            component = matchDecision.decision.Component;
+            decision = matchDecision.decision.Decision.ToString();
+            reason = matchDecision.decision.Reason;
+        }
+        else
+        {
+            var srcCls = new PathClassifier(pair, plan.FromProduct, asTarget: false);
+            var tgtCls = new PathClassifier(pair, plan.ToProduct, asTarget: true);
+            var sc = srcCls.ComponentOf(norm);
+            var tc = tgtCls.ComponentOf(norm);
+            if (sc is not null)
+            {
+                srcPath = norm;
+                tgtPath = PathClassifier.MapPath(sc, plan.FromProduct, plan.ToProduct, norm) ?? norm;
+                component = sc.Id;
+            }
+            else if (tc is not null)
+            {
+                tgtPath = norm;
+                srcPath = PathClassifier.MapPath(tc, plan.ToProduct, plan.FromProduct, norm) ?? norm;
+                component = tc.Id;
+            }
+
+            if (TryGetPathOverride(plan.PathOverrides, srcPath, out var ov, out var ovRule) ||
+                TryGetPathOverride(plan.PathOverrides, tgtPath, out ov, out ovRule))
+            {
+                decision = ov.ToString();
+                reason = $"override ({ovRule})";
+            }
+        }
+
+        var baselineSha = plan.ReconcileBaseline ?? plan.MergeBase;
+        var srcBlob = await ReadBlobInfoAsync(mirror, plan.SourceHeadSha, srcPath, ct);
+        var tgtBlob = await ReadBlobInfoAsync(mirror, plan.TargetBaseSha, tgtPath, ct);
+        var baseBlob = baselineSha is not null ? await ReadBlobInfoAsync(mirror, baselineSha, srcPath, ct) : default;
+
+        var targetToSourceDiff = await DiffBlobsAsync(
+            mirror,
+            tgtBlob.Sha, $"{plan.ToProduct}:{tgtPath}", plan.TargetBaseSha, tgtPath,
+            srcBlob.Sha, $"{plan.FromProduct}:{srcPath}", plan.SourceHeadSha, srcPath,
+            ct);
+
+        var baselineToTargetDiff = baselineSha is not null
+            ? await DiffBlobsAsync(
+                mirror,
+                baseBlob.Sha, $"baseline:{srcPath}", baselineSha, srcPath,
+                tgtBlob.Sha, $"{plan.ToProduct}:{tgtPath}", plan.TargetBaseSha, tgtPath,
+                ct)
+            : "";
+
+        var baselineToSourceDiff = baselineSha is not null
+            ? await DiffBlobsAsync(
+                mirror,
+                baseBlob.Sha, $"baseline:{srcPath}", baselineSha, srcPath,
+                srcBlob.Sha, $"{plan.FromProduct}:{srcPath}", plan.SourceHeadSha, srcPath,
+                ct)
+            : "";
+
+        var touchingCommits = !string.IsNullOrWhiteSpace(commitSha)
+            ? [commitSha]
+            : plan.Commits
+                .Where(c => c.Paths.Any(p => Glob.Normalize(p.SourcePath) == srcPath || (p.TargetPath is not null && Glob.Normalize(p.TargetPath) == tgtPath)))
+                .Select(c => c.Sha)
+                .Take(5)
+                .ToList();
+
+        var commitDiffSb = new System.Text.StringBuilder();
+        foreach (var cSha in touchingCommits)
+        {
+            var show = await _git.RunAsync(mirror, ["-c", "core.quotePath=false", "show", "--no-color", "-U5", "--format=commit %H%nAuthor: %an <%ae> (%aI)%nSubject: %s%n", cSha, "--", srcPath], ct: ct);
+            if (show.Success && !string.IsNullOrWhiteSpace(show.StdOut))
+            {
+                commitDiffSb.AppendLine(show.StdOut.TrimEnd());
+                commitDiffSb.AppendLine();
+            }
+        }
+
+        var srcLast = (await _git.RunAsync(mirror, ["log", "-1", "--format=%h · %an · %as — %s", plan.SourceHeadSha, "--", srcPath], ct: ct)).StdOut.Trim();
+        var tgtLast = (await _git.RunAsync(mirror, ["log", "-1", "--format=%h · %an · %as — %s", plan.TargetBaseSha, "--", tgtPath], ct: ct)).StdOut.Trim();
+
+        return new PlanFileDiffResult
+        {
+            PlanId = plan.Id,
+            RequestedPath = rawPath,
+            SourcePath = srcPath,
+            TargetPath = tgtPath,
+            Component = component,
+            Decision = decision,
+            Reason = reason,
+            ExistsInSource = srcBlob.Exists,
+            ExistsInTarget = tgtBlob.Exists,
+            ExistsInBaseline = baseBlob.Exists,
+            IsBinary = srcBlob.IsBinary || tgtBlob.IsBinary,
+            Identical = srcBlob.Exists && tgtBlob.Exists && srcBlob.Sha == tgtBlob.Sha,
+            SourceLastCommit = string.IsNullOrWhiteSpace(srcLast) ? null : srcLast,
+            TargetLastCommit = string.IsNullOrWhiteSpace(tgtLast) ? null : tgtLast,
+            TargetToSourceDiff = targetToSourceDiff,
+            BaselineToTargetDiff = baselineToTargetDiff,
+            BaselineToSourceDiff = baselineToSourceDiff,
+            CommitDiff = commitDiffSb.ToString().TrimEnd(),
+            SourceContent = srcBlob.Content,
+            TargetContent = tgtBlob.Content,
+            BaselineContent = baseBlob.Content,
+        };
+    }
+
+    private async Task<(bool Exists, string? Sha, string? Content, bool IsBinary)> ReadBlobInfoAsync(string mirror, string treeish, string filePath, CancellationToken ct)
+    {
+        var rev = await _git.RunAsync(mirror, ["rev-parse", "--verify", "--quiet", $"{treeish}:{filePath}"], ct: ct);
+        if (!rev.Success) return (false, null, null, false);
+        var sha = rev.StdOut.Trim();
+        if (string.IsNullOrEmpty(sha)) return (false, null, null, false);
+
+        var show = await _git.RunAsync(mirror, ["cat-file", "blob", sha], ct: ct);
+        if (!show.Success) return (true, sha, null, false);
+        var bytes = show.StdOutBytes;
+        bool isBinary = bytes.Take(Math.Min(bytes.Length, 8000)).Contains((byte)0);
+        if (isBinary) return (true, sha, null, true);
+
+        const int maxBytes = 250_000;
+        var text = System.Text.Encoding.UTF8.GetString(bytes, 0, Math.Min(bytes.Length, maxBytes));
+        if (bytes.Length > maxBytes)
+            text += $"\n… (truncated at {maxBytes:N0} bytes; total {bytes.Length:N0} bytes)";
+        return (true, sha, text, false);
+    }
+
+    private async Task<string> DiffBlobsAsync(
+        string mirror,
+        string? shaA, string labelA, string treeA, string pathA,
+        string? shaB, string labelB, string treeB, string pathB,
+        CancellationToken ct)
+    {
+        if (shaA is null && shaB is null) return "";
+        if (shaA is not null && shaB is not null && shaA == shaB) return "";
+
+        const string emptyTree = "4b825dc642cb6eb9a060e54bf8d69288fbee4904";
+        if (shaA is not null && shaB is not null)
+        {
+            var r = await _git.RunAsync(mirror, ["-c", "core.quotePath=false", "diff", "--no-color", "-U5", shaA, shaB], ct: ct);
+            return RewriteBlobDiffHeader(r.StdOut, labelA, labelB);
+        }
+        if (shaA is null && shaB is not null)
+        {
+            var r = await _git.RunAsync(mirror, ["-c", "core.quotePath=false", "diff", "--no-color", "-U5", emptyTree, treeB, "--", pathB], ct: ct);
+            return r.StdOut;
+        }
+        else
+        {
+            var r = await _git.RunAsync(mirror, ["-c", "core.quotePath=false", "diff", "--no-color", "-U5", treeA, emptyTree, "--", pathA], ct: ct);
+            return r.StdOut;
+        }
+    }
+
+    private static string RewriteBlobDiffHeader(string rawDiff, string labelA, string labelB)
+    {
+        if (string.IsNullOrWhiteSpace(rawDiff)) return "";
+        var lines = rawDiff.Replace("\r\n", "\n").Split('\n');
+        var sb = new System.Text.StringBuilder();
+        foreach (var line in lines)
+        {
+            if (line.StartsWith("diff --git ", StringComparison.Ordinal))
+                sb.AppendLine($"diff --git a/{labelA} b/{labelB}");
+            else if (line.StartsWith("--- ", StringComparison.Ordinal))
+                sb.AppendLine($"--- a/{labelA}");
+            else if (line.StartsWith("+++ ", StringComparison.Ordinal))
+                sb.AppendLine($"+++ b/{labelB}");
+            else
+                sb.AppendLine(line);
+        }
+        return sb.ToString().TrimEnd();
+    }
+}
+
+public sealed record PlanFileDiffResult
+{
+    public required string PlanId { get; init; }
+    public required string RequestedPath { get; init; }
+    public required string SourcePath { get; init; }
+    public required string TargetPath { get; init; }
+    public string? Component { get; init; }
+    public string? Decision { get; init; }
+    public string? Reason { get; init; }
+    public bool ExistsInSource { get; init; }
+    public bool ExistsInTarget { get; init; }
+    public bool ExistsInBaseline { get; init; }
+    public bool IsBinary { get; init; }
+    public bool Identical { get; init; }
+    public string? SourceLastCommit { get; init; }
+    public string? TargetLastCommit { get; init; }
+    public string TargetToSourceDiff { get; init; } = "";
+    public string BaselineToTargetDiff { get; init; } = "";
+    public string BaselineToSourceDiff { get; init; } = "";
+    public string CommitDiff { get; init; } = "";
+    public string? SourceContent { get; init; }
+    public string? TargetContent { get; init; }
+    public string? BaselineContent { get; init; }
 }

@@ -48,17 +48,19 @@ public static class StatusEvaluator
     }
 
     /// <summary>READY only when: transfer applied, no blocking findings, all review findings
-    /// accepted, and every required validation check passed on the candidate. A baseline that also
-    /// fails never makes a candidate ready.</summary>
-    public static RunStatus ForRun(Plan plan, Run run, IEnumerable<string> accepted)
+    /// accepted, and every required validation check passed on the candidate (unless validation
+    /// override is explicitly accepted by the approver).</summary>
+    public static RunStatus ForRun(Plan plan, Run run, IEnumerable<string> accepted, bool overrideValidation = false)
     {
         var acc = accepted.ToHashSet();
+        if (acc.Contains("OVERRIDE_VALIDATION")) overrideValidation = true;
         var all = plan.Findings.Concat(run.Findings).ToList();
         if (run.Conflict is not null || all.Any(f => f.Blocking)) return RunStatus.BLOCKED;
         if (run.CandidateSha is null || run.AppliedCommits.Count == 0 && plan.Reconciliation is null && plan.Mode != SelectionMode.Merge)
             return all.Any(f => f.RequiresReview && !acc.Contains(f.Id)) ? RunStatus.REVIEW_REQUIRED : RunStatus.NO_CHANGES;
         var requiredCandidate = run.CandidateValidation.Where(v => v.Required && v.Outcome != "SKIPPED").ToList();
-        if (requiredCandidate.Count == 0 || requiredCandidate.Any(v => v.Outcome != "PASSED")) return RunStatus.VALIDATION_FAILED;
+        if (!overrideValidation && (requiredCandidate.Count == 0 || requiredCandidate.Any(v => v.Outcome != "PASSED")))
+            return RunStatus.VALIDATION_FAILED;
         if (all.Any(f => f.RequiresReview && !acc.Contains(f.Id))) return RunStatus.REVIEW_REQUIRED;
         return RunStatus.READY;
     }
