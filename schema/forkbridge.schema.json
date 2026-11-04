@@ -40,6 +40,24 @@
         }
       }
     },
+    "merge": {
+      "type": "object",
+      "additionalProperties": false,
+      "description": "Branch merge workspace: merge a source branch INTO a target branch of one repository.",
+      "properties": {
+        "branchPrefix": { "type": "string", "default": "forkbridge/merge", "description": "Integration branches: <prefix>/<target>/<session>." },
+        "protectedBranches": { "type": "array", "items": { "type": "string" }, "description": "Never pushed to by the merge workspace." },
+        "maxEditableBytes": { "type": "integer", "minimum": 1024, "maximum": 16777216, "default": 1048576 },
+        "repositories": {
+          "type": "object",
+          "additionalProperties": {
+            "type": "object",
+            "additionalProperties": false,
+            "properties": { "validation": { "$ref": "#/$defs/validationProfile" } }
+          }
+        }
+      }
+    },
     "publish": {
       "type": "object",
       "additionalProperties": false,

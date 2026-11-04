@@ -15,6 +15,9 @@ Modular monolith, one engine shared by two front doors.
                 └─────────────────────────────────────────────────────────────────────────────┘
 ```
 
+Two modules sit beside the engine and depend on it one-way: `ForkBridge.Alignment` (Harmony, `docs/alignment.md`)
+and `ForkBridge.Merge` (single-repository branch merge workspace, `docs/merge.md`). Neither changes Core behaviour.
+
 * **Process layer.** Every external call goes through `IProcessRunner` with `ProcessStartInfo.ArgumentList`
   (no shell, no string concatenation), a timeout, cancellation (kills the process tree) and a bounded
   output buffer that keeps draining so the child never blocks. Git runs with `GIT_TERMINAL_PROMPT=0`,

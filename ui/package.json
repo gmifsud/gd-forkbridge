@@ -5,7 +5,8 @@
     "ng": "ng",
     "start": "ng serve",
     "build": "ng build",
-    "typecheck": "tsc -p tsconfig.app.json --noEmit"
+    "typecheck": "tsc -p tsconfig.app.json --noEmit",
+    "test": "tsc -p tsconfig.spec.json && node --test test/merge-logic.test.cjs"
   },
   "private": true,
   "packageManager": "npm@10.9.4",

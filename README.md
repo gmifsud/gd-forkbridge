@@ -29,13 +29,15 @@ directory. Nothing is pushed without an approval bound to the exact candidate.
 | `src/ForkBridge.Cli` | `forkbridge` CLI (local + CI, documented exit codes) |
 | `src/ForkBridge.Web` | `forkbridge-web` loopback service hosting the Angular UI |
 | `ui/` | Angular 21 UI (signals, zoneless); builds into `src/ForkBridge.Web/wwwroot` |
-| `tests/` | 56 xUnit tests over real temporary git repositories (+ `FixtureTool` validation stand-in) |
+| `tests/` | xUnit tests over real temporary git repositories (Core, Alignment, Merge; + `FixtureTool` validation stand-in) |
 | `schema/forkbridge.schema.json` | Policy schema (YAML language server compatible) |
 | `examples/forkbridge.example.yml` | Starting policy for the real repos — VERIFIED / UNVERIFIED / PLACEHOLDER marked |
 | `examples/demo/New-ForkBridgeDemo.ps1` | Builds a sandbox of four forked fixture repos to try the full workflow |
 | `scripts/Publish-ForkBridge.ps1` | Release publish; adds the output folder to `PATH` if missing |
 | `ci/` | Azure Pipelines and GitHub Actions examples |
 | `src/ForkBridge.Alignment` | Branch alignment (Harmony): bidirectional reconciliation of a primary/fork shared scope on any worktree - see `docs/alignment.md` |
+| `src/ForkBridge.Merge` | Merge workspace: merge a source branch INTO a target branch of one repository, resolve conflicts in the browser, publish an integration branch - see `docs/merge.md` |
+| `examples/demo/New-ForkBridgeMergeDemo.ps1` | Sandbox repository for the Merge tab (every outcome and supported conflict type) |
 | `scripts/branch-alignment*` | PowerShell reference implementation of branch alignment (Backend, Frontend) |
 | `docs/` | Architecture & threat model, discovery report, Fork-Over.ps1 audit, CLI, troubleshooting, limitations |
 
@@ -46,14 +48,14 @@ Requirements (pinned):
 | Tool | Version | Why |
 |---|---|---|
 | .NET SDK | 10.0.1xx+ (`global.json`, rollForward latestFeature) | .NET 10 is the current LTS; .NET 8 support ends Nov 2026 |
-| Git | ≥ 2.38 recommended (≥ 2.30 works) | `merge-tree --write-tree` for merge-resolution checks; older Git blocks merge commits instead of guessing |
+| Git | ≥ 2.38 recommended (≥ 2.30 works) | `merge-tree --write-tree` for merge-resolution checks; older Git blocks merge commits instead of guessing. The Merge tab requires ≥ 2.38 |
 | Node.js / npm | ≥ 20.19 / npm 10.9 (only to rebuild the UI) | Angular 21.2.23, TypeScript 5.9.3, exact versions in `ui/package.json` |
 | PowerShell 7 | for the demo and publish scripts | |
 
 ```powershell
 dotnet build -c Release
-dotnet test                                    # 56 fixture tests, ~1.5 min
-cd ui; npm ci; npm run build; cd ..            # optional: the built UI is produced into src/ForkBridge.Web/wwwroot
+dotnet test                                    # fixture tests over real git repositories, ~2.5 min
+cd ui; npm ci; npm run build; npm test; cd ..  # optional: the built UI is produced into src/ForkBridge.Web/wwwroot
 ```
 
 Run the CLI with `dotnet src/ForkBridge.Cli/bin/Release/net10.0/forkbridge.dll …` or publish it

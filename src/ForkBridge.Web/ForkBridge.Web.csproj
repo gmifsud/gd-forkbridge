@@ -6,6 +6,7 @@
   <ItemGroup>
     <ProjectReference Include="..\ForkBridge.Core\ForkBridge.Core.csproj" />
     <ProjectReference Include="..\ForkBridge.Alignment\ForkBridge.Alignment.csproj" />
+    <ProjectReference Include="..\ForkBridge.Merge\ForkBridge.Merge.csproj" />
   </ItemGroup>
   <ItemGroup>
     <!-- Angular build output (ui/ -> npm run build). Copied next to the binaries so the web root is
@@ -14,5 +15,6 @@
   </ItemGroup>
   <ItemGroup>
     <InternalsVisibleTo Include="ForkBridge.Tests" />
+    <InternalsVisibleTo Include="ForkBridge.Merge.Tests" />
   </ItemGroup>
 </Project>

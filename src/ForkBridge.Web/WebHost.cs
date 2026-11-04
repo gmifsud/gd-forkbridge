@@ -94,6 +94,7 @@ public static class WebHost
         app.UseStaticFiles();
         MapApi(app, engine, jobs);
         AlignmentEndpoints.Map(app, o.ConfigPath, jobs);
+        MergeEndpoints.Map(app, engine, jobs);
         app.MapFallbackToFile("index.html");
         return app;
     }
@@ -102,6 +103,7 @@ public static class WebHost
     {
         var (code, status) = ex switch
         {
+            ForkBridge.Merge.Git.MergeException me => MergeEndpoints.Map(me),
             ForkBridge.Core.Config.ConfigException => (ExitCodes.ConfigError, 400),
             PlanningException p => (p.ExitCode, 409),
             StaleException => (ExitCodes.Stale, 409),
@@ -370,7 +372,8 @@ public sealed class JobService(bool verbose = false)
                 job.ExitCode = ex switch
                 {
                     PlanningException p => p.ExitCode, StaleException or PlanIntegrityException => ExitCodes.Stale,
-                    PublishRefusedException p => p.ExitCode, FreshnessException => ExitCodes.FetchFailed, HarnessSafetyException => ExitCodes.Safety, _ => ExitCodes.Internal,
+                    PublishRefusedException p => p.ExitCode, FreshnessException => ExitCodes.FetchFailed, HarnessSafetyException => ExitCodes.Safety,
+                    ForkBridge.Merge.Git.MergeException me => MergeEndpoints.Map(me).Exit, _ => ExitCodes.Internal,
                 };
                 if (verbose) Console.Error.WriteLine($"[job] FAIL  {job.Id} ({kind}) exit {job.ExitCode}: {job.Error}");
             }

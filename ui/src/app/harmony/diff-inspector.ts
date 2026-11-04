@@ -1,34 +1,14 @@
 import { Component, computed, effect, HostListener, input, output, signal, untracked } from '@angular/core';
 import { categoryLabel, Decision, DECISIONS, decisionInfo, RowDiff, short } from './harmony-api';
+import { classifyDiffLines, invertDiff } from '../shared/diff/diff-lines';
+import { UnifiedDiff } from '../shared/diff/unified-diff';
+import { shortcutAllowed } from '../shared/keyboard';
+
+/** Re-exported for existing importers; the implementation lives in shared/diff. */
+export { invertDiff };
 
 type Tab = 'apply' | 'forkVsPrimary' | 'baseToFork' | 'baseToPrimary' | 'merged' | 'side';
 interface ApplySide { label: string; diff: string; note: string; }
-
-/** Reverses a unified diff (old ↔ new): swaps the file headers, the hunk ranges and the +/- lines. Exact, so
- *  "ISL vs QiSL" can be shown as the change QiSL will receive. */
-export function invertDiff(diff: string): string {
-  const out = diff.split('\n').map((l) => {
-    if (l.startsWith('--- ')) return '+++ ' + l.slice(4);
-    if (l.startsWith('+++ ')) return '--- ' + l.slice(4);
-    const h = /^@@ -(\S+) \+(\S+) @@(.*)$/.exec(l);
-    if (h) return `@@ -${h[2]} +${h[1]} @@${h[3]}`;
-    if (l.startsWith('+')) return '-' + l.slice(1);
-    if (l.startsWith('-')) return '+' + l.slice(1);
-    return l;
-  });
-  if (out.length > 1 && out[0].startsWith('+++ ') && out[1].startsWith('--- ')) [out[0], out[1]] = [out[1], out[0]];
-  // Within each run of changed lines, list removals before additions (git's own order), keeping relative order.
-  const res: string[] = [];
-  for (let i = 0; i < out.length;) {
-    const l = out[i];
-    const changed = (x: string) => (x.startsWith('+') && !x.startsWith('+++ ')) || (x.startsWith('-') && !x.startsWith('--- '));
-    if (!changed(l)) { res.push(l); i++; continue; }
-    const run: string[] = [];
-    while (i < out.length && changed(out[i])) run.push(out[i++]);
-    res.push(...run.filter((x) => x.startsWith('-')), ...run.filter((x) => x.startsWith('+')));
-  }
-  return res.join('\n');
-}
 
 /** Whole-file deletion as a unified diff (for "delete both"). */
 function deletionDiff(text: string | undefined, label: string, path: string): string {
@@ -43,6 +23,7 @@ function deletionDiff(text: string | undefined, label: string, path: string): st
  *  1–6 switch tabs, Esc closes. */
 @Component({
   selector: 'fb-diff-inspector',
+  imports: [UnifiedDiff],
   styles: [`
     .panel-x { width: 96vw; max-width: 1500px; height: 92vh; }
     .meta { display: flex; flex-wrap: wrap; gap: 4px 18px; margin-top: 4px; font-size: 12px; color: var(--muted); }
@@ -134,8 +115,7 @@ function deletionDiff(text: string | undefined, label: string, path: string): st
             <div class="stack">
               @for (a of apply(); track a.label) {
                 <h4>{{ a.label }}</h4>
-                @if (a.diff) { <pre class="diff diff-viewer-pre">@for (l of lines(a.diff); track $index) {<span [class]="l.cls">{{ l.text }}
-</span>}</pre> } @else { <div class="empty-diff-note muted">{{ a.note }}</div> }
+                <fb-unified-diff [diff]="a.diff" [empty]="a.note" />
               }
             </div>
           } @else if (tab() === 'side') {
@@ -146,17 +126,14 @@ function deletionDiff(text: string | undefined, label: string, path: string): st
           } @else if (tab() === 'merged') {
             <div class="stack">
               <h4>{{ primaryLabel() }} → merged</h4>
-              @if (d()!.primaryToMerged) { <pre class="diff diff-viewer-pre">@for (l of lines(d()!.primaryToMerged); track $index) {<span [class]="l.cls">{{ l.text }}
-</span>}</pre> } @else { <div class="empty-diff-note muted">{{ primaryLabel() }} already holds the merged content.</div> }
+              <fb-unified-diff [diff]="d()!.primaryToMerged" [empty]="primaryLabel() + ' already holds the merged content.'" />
               <h4>{{ forkLabel() }} → merged</h4>
-              @if (d()!.forkToMerged) { <pre class="diff diff-viewer-pre">@for (l of lines(d()!.forkToMerged); track $index) {<span [class]="l.cls">{{ l.text }}
-</span>}</pre> } @else { <div class="empty-diff-note muted">{{ forkLabel() }} already holds the merged content.</div> }
+              <fb-unified-diff [diff]="d()!.forkToMerged" [empty]="forkLabel() + ' already holds the merged content.'" />
             </div>
           } @else if (!activeText()) {
             <div class="empty-diff-note"><p class="muted">No differences in this view ({{ tabLabel() }}).</p></div>
           } @else {
-            <pre class="diff diff-viewer-pre">@for (l of lines(activeText()); track $index) {<span [class]="l.cls">{{ l.text }}
-</span>}</pre>
+            <fb-unified-diff [diff]="activeText()" />
           }
           @if (d()?.truncated) { <p class="small muted">Large file: side-by-side content is truncated at 2 MB (the diffs are complete).</p> }
         </div>
@@ -231,11 +208,7 @@ export class DiffInspector {
   readonly tabLabel = computed(() => ({ forkVsPrimary: `${this.forkLabel()} vs ${this.primaryLabel()}`, baseToFork: `SyncBase → ${this.forkLabel()}`,
     baseToPrimary: `SyncBase → ${this.primaryLabel()}`, merged: 'merged result', side: 'side-by-side', apply: 'on apply' })[this.tab()]);
 
-  lines(raw: string) {
-    return raw.split('\n').map((text) => ({
-      text, cls: text.startsWith('+++') || text.startsWith('---') ? 'dfile' : text.startsWith('@@') ? 'dhunk' : text.startsWith('+') ? 'da' : text.startsWith('-') ? 'dd' : '',
-    }));
-  }
+  lines(raw: string) { return classifyDiffLines(raw); }
 
   async copy() {
     try { await navigator.clipboard.writeText(this.activeText()); this.copied.set('Copied'); }
@@ -245,9 +218,7 @@ export class DiffInspector {
 
   @HostListener('document:keydown', ['$event'])
   onKey(e: KeyboardEvent) {
-    const t = e.target as HTMLElement | null;
-    if (t && (t.tagName === 'INPUT' || t.tagName === 'TEXTAREA' || t.tagName === 'SELECT' || t.isContentEditable)) return;
-    if (e.ctrlKey || e.metaKey || e.altKey) return;
+    if (!shortcutAllowed(e)) return;
     const tabs: Tab[] = ['apply', 'forkVsPrimary', 'baseToFork', 'baseToPrimary', 'merged', 'side'];
     if (e.key === 'Escape') { e.preventDefault(); this.close.emit(); }
     else if (e.key === 'ArrowRight' || e.key === 'j') { e.preventDefault(); if (this.index() < this.count() - 1) this.navigate.emit(1); }

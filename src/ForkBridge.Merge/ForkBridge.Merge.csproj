@@ -1,0 +1,13 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <!-- Branch merge workspace: one repository, a source branch merged INTO a target branch, executed in
+       harness-owned storage. Depends one-way on ForkBridge.Core; independent of ForkBridge.Alignment. -->
+  <PropertyGroup>
+    <RootNamespace>ForkBridge.Merge</RootNamespace>
+  </PropertyGroup>
+  <ItemGroup>
+    <ProjectReference Include="..\ForkBridge.Core\ForkBridge.Core.csproj" />
+  </ItemGroup>
+  <ItemGroup>
+    <InternalsVisibleTo Include="ForkBridge.Merge.Tests" />
+  </ItemGroup>
+</Project>

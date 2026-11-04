@@ -16,6 +16,8 @@ public sealed class ForkBridgeConfig
     public Dictionary<string, PairConfig> Pairs { get; set; } = new();
     public Dictionary<string, BundleValidationConfig> Bundles { get; set; } = new();
     public PublishConfig Publish { get; set; } = new();
+    /// <summary>Branch merge workspace (one repository, source INTO target). Independent of pairs.</summary>
+    public MergeConfig Merge { get; set; } = new();
     public string? LegacyScript { get; set; }
 
     [YamlIgnore] public string SourceFile { get; set; } = "";
@@ -131,6 +133,25 @@ public sealed class ValidationStep
 public sealed class BundleValidationConfig
 {
     public List<string> Pairs { get; set; } = new();
+    public ValidationProfile Validation { get; set; } = new();
+}
+
+public sealed class MergeConfig
+{
+    /// <summary>Integration branches are published as &lt;prefix&gt;/&lt;target&gt;/&lt;session&gt;.</summary>
+    public string BranchPrefix { get; set; } = "forkbridge/merge";
+    /// <summary>Branches the merge workspace never pushes to (integration branches must not match).</summary>
+    public List<string> ProtectedBranches { get; set; } = ["main", "master", "development", "develop", "release/*", "hotfix/*"];
+    /// <summary>Largest file (bytes) offered in the browser editor. Larger files can only take a side.</summary>
+    public long MaxEditableBytes { get; set; } = 1024 * 1024;
+    /// <summary>Repository alias -> merge settings (validation profile).</summary>
+    public Dictionary<string, MergeRepositoryConfig> Repositories { get; set; } = new();
+}
+
+public sealed class MergeRepositoryConfig
+{
+    /// <summary>Checks run on the exact merge candidate. Same trust model as pair validation: the profile must
+    /// be trusted here AND the caller must trust validation for that request.</summary>
     public ValidationProfile Validation { get; set; } = new();
 }
 

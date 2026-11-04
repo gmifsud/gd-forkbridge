@@ -54,6 +54,16 @@ public static class ConfigValidator
                 foreach (var s in prof.Steps)
                     if (s.Run.Count == 0) e.Add($"{at}.validation.{pn}.{s.Id}: 'run' must list the executable and its arguments.");
         }
+        foreach (var (alias, m) in cfg.Merge.Repositories)
+        {
+            if (!cfg.Repositories.ContainsKey(alias)) e.Add($"merge.repositories.{alias} references unknown repository '{alias}'.");
+            foreach (var s in m.Validation.Steps)
+                if (s.Run.Count == 0) e.Add($"merge.repositories.{alias}.validation.{s.Id}: 'run' must list the executable and its arguments.");
+        }
+        var prefix = cfg.Merge.BranchPrefix ?? "";
+        if (prefix.Length == 0 || prefix.Contains("..") || prefix.StartsWith('/') || prefix.EndsWith('/') || prefix.Any(c => char.IsWhiteSpace(c) || c is '~' or '^' or ':' or '?' or '*' or '[' or '\\'))
+            e.Add("merge.branchPrefix must be a valid relative branch prefix (e.g. forkbridge/merge).");
+        if (cfg.Merge.MaxEditableBytes is < 1024 or > 16 * 1024 * 1024) e.Add("merge.maxEditableBytes must be between 1024 and 16777216.");
         return e;
     }
 }

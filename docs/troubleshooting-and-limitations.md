@@ -15,6 +15,11 @@
 | `ANCESTRY_CONTENT_MISMATCH` | Earlier filtered merge. `plan --mode reconcile --baseline <sha before that merge>`. |
 | Conflict | Resolve in the **run workspace** printed in the report (never your checkout), remove markers, `forkbridge resume --run <id>`. Evidence: `state/runs/<id>/evidence/`. |
 | Web UI says Unauthorized | Open the exact URL printed by `forkbridge-web` (token in the `#` fragment); tokens change per launch. |
+| Merge: "needs git 2.38 or newer" | The Merge tab relies on `git merge-tree --write-tree`. Upgrade Git. |
+| Merge: "changed since you loaded it" (409, exit 13) | Another tab or a later save changed the session. Click **Reload file**; your text stays in the editor until then. |
+| Merge: session **Damaged** | The harness workspace was modified or removed outside ForkBridge. **Recover** rebuilds it from the recorded resolutions. |
+| Merge: "target branch moved on the remote" | The approved merge is stale. Analyze again (the plan never re-resolves branches). |
+| Merge: "Not supported here" | Rename/delete, rename/rename, file/directory, symlink, submodule or mode conflicts. Resolve in a local clone, push, analyze again. |
 | Disk usage | Mirrors are full copies. `forkbridge cleanup --all-finished`; delete `state/mirrors/<alias>.git` to rebuild. |
 
 # Known limitations
@@ -31,6 +36,10 @@
   files at a configurable depth (default 2). Moved components (different paths) must be mapped by hand.
 * **Merge mode** necessarily records excluded content as merged in ancestry; it is advanced/opt-in.
 * **Octopus merges** in a selection are blocked.
+* **Merge workspace.** Whole-file editing only (no per-hunk accept controls yet); structural conflicts (renames,
+  file/directory, symlinks, submodules, modes) are blocked rather than resolved; validation runs the candidate only
+  (no baseline comparison); LFS/filtered content is merged and validated in its stored form; pull requests only via
+  the Azure DevOps provider; no CLI commands yet.
 * **Bundles are not atomic.** Each repository is published separately; partial publication is
   recorded with recovery steps. Combined validation runs in the first candidate workspace with all
   workspace paths in environment variables.

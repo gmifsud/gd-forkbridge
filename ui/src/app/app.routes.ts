@@ -6,6 +6,8 @@ import { BundlePage, Discover, History } from './pages/lists';
 import { PolicyPage } from './pages/policy';
 import { HarmonyPage } from './harmony/harmony.page';
 import { SyncBasePage } from './harmony/syncbase.page';
+import { MergePage } from './merge/merge.page';
+import { MergeSessionPage } from './merge/merge-session.page';
 
 export const routes: Routes = [
   { path: '', component: NewPlan, title: 'ForkBridge · New plan' },
@@ -17,5 +19,7 @@ export const routes: Routes = [
   { path: 'policy', component: PolicyPage, title: 'ForkBridge · Policy & Config' },
   { path: 'harmony', component: HarmonyPage, title: 'ForkBridge · Harmony' },
   { path: 'harmony/:profile/syncbase', component: SyncBasePage, title: 'ForkBridge · SyncBase' },
+  { path: 'merge', component: MergePage, title: 'ForkBridge · Merge' },
+  { path: 'merge/sessions/:sessionId', component: MergeSessionPage, title: 'ForkBridge · Merge session' },
   { path: '**', redirectTo: '' },
 ];

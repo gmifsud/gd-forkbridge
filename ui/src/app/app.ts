@@ -14,6 +14,7 @@ import { Api } from './api';
         <a routerLink="/discover" routerLinkActive="on">Discovery</a>
         <a routerLink="/policy" routerLinkActive="on">Policy & Config</a>
         <a routerLink="/harmony" routerLinkActive="on">Harmony</a>
+        <a routerLink="/merge" routerLinkActive="on">Merge</a>
       </nav>
       <span class="local">local · loopback only</span>
     </header>

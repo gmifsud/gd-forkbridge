@@ -1,0 +1,16 @@
+{
+  "extends": "./tsconfig.json",
+  "compilerOptions": {
+    "outDir": "./out-spec",
+    "rootDir": "./src",
+    "module": "commonjs",
+    "moduleResolution": "node",
+    "importHelpers": false,
+    "types": []
+  },
+  "files": [
+    "src/app/shared/diff/diff-lines.ts",
+    "src/app/shared/keyboard.ts",
+    "src/app/merge/merge-logic.ts"
+  ]
+}
