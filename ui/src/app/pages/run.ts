@@ -1,7 +1,7 @@
 import { Component, computed, inject, input, OnInit, signal } from '@angular/core';
 import { FormsModule } from '@angular/forms';
 import { Router, RouterLink } from '@angular/router';
-import { Api, Plan, Run } from '../api';
+import { Api, ConflictFileDetail, Plan, Run } from '../api';
 import { Findings, Sha, StatusChip } from '../shared';
 import { PlanDetails } from './plan-details';
 
@@ -46,14 +46,77 @@ type Tab = 'summary' | 'findings' | 'classification' | 'conflict' | 'validation'
         @case ('conflict') {
           @if (r.conflict; as c) {
             <section class="card">
-              <p><b>{{ c.operation }}</b> stopped. Shared-code conflicts are never auto-resolved.</p>
-              <ol>@for (i of c.instructions; track $index) { <li><code>{{ i }}</code></li> }</ol>
-              <p>Files: @for (f of c.files; track f) { <code>{{ f }}</code> }</p>
-              @if (c.output) { <pre class="out">{{ c.output }}</pre> }
+              <div class="row" style="justify-content: space-between">
+                <div>
+                  <b>{{ c.operation }}</b> stopped.
+                  <span class="muted small">Resolve each conflicted file below directly in the UI, then click Resume.</span>
+                </div>
+                <div class="row">
+                  <label class="inline"><input type="checkbox" [(ngModel)]="trust"> trust validation</label>
+                  <button class="primary" (click)="resume()" [disabled]="!!api.busy()">Resume Run</button>
+                </div>
+              </div>
+              @if (c.output) { <details><summary class="small muted">Git output & CLI instructions</summary><pre class="out">{{ c.output }}</pre></details> }
             </section>
-            <div class="evidence">
-              @for (e of evidence(); track e.name) { <div><h4>{{ e.name }}</h4><pre>{{ e.content }}</pre></div> }
-            </div>
+
+            @for (cf of conflictFiles(); track cf.file) {
+              <section class="card">
+                <div class="row" style="justify-content: space-between">
+                  <div>
+                    <code>{{ cf.file }}</code>
+                    @if (cf.isBinary) { <span class="chip">BINARY</span> }
+                    <span class="chip" [class.s-BLOCKED]="cf.hasConflictMarkers || cf.nothingApplied" [class.s-READY]="!cf.hasConflictMarkers && !cf.nothingApplied">
+                      {{ cf.hasConflictMarkers ? 'Needs Resolution' : cf.nothingApplied ? 'Patch Rejected (Select Resolution)' : 'Staged / Clean' }}
+                    </span>
+                  </div>
+                  <div class="row">
+                    <button class="small" (click)="resolveFile(cf.file, 'target')" [disabled]="!!api.busy()" title="Keep the target repository version of this file">Use Target (Ours)</button>
+                    <button class="small" (click)="resolveFile(cf.file, 'source')" [disabled]="!!api.busy()" title="Take the incoming source repository version of this file">Use Source (Theirs)</button>
+                    <button class="small danger" (click)="resolveFile(cf.file, 'exclude')" [disabled]="!!api.busy()" title="Drop changes to this file from the commit">Exclude File</button>
+                  </div>
+                </div>
+
+                @if (cf.isBinary) {
+                  <p class="muted small">Binary file conflict — choose <b>Use Target (Ours)</b>, <b>Use Source (Theirs)</b>, or <b>Exclude File</b> above.</p>
+                } @else {
+                  <details [open]="cf.hasConflictMarkers || cf.nothingApplied">
+                    <summary class="small">Inspect &amp; Edit File Content (Working Tree / Target / Source / Base)</summary>
+                    <div class="row small" style="margin-top: 6px">
+                      <button class="small" (click)="fillEditor(cf.file, cf.targetContent ?? '')">Load Target into Editor</button>
+                      <button class="small" (click)="fillEditor(cf.file, cf.sourceContent ?? '')">Load Source into Editor</button>
+                      @if (cf.baseContent !== null && cf.baseContent !== undefined) {
+                        <button class="small" (click)="fillEditor(cf.file, cf.baseContent)">Load Base into Editor</button>
+                      }
+                      <button class="small" (click)="fillEditor(cf.file, cf.workingTree ?? '')">Reset to Working Tree</button>
+                      <button class="small primary" (click)="resolveFile(cf.file, 'custom', customContents[cf.file])" [disabled]="!!api.busy()">Save Custom Resolution &amp; Stage</button>
+                    </div>
+                    <textarea class="code-editor" rows="14" [(ngModel)]="customContents[cf.file]"></textarea>
+                    <div class="grid2">
+                      @if (cf.targetContent !== null && cf.targetContent !== undefined) {
+                        <div><h4>Target (Ours)</h4><pre class="out">{{ cf.targetContent }}</pre></div>
+                      }
+                      @if (cf.sourceContent !== null && cf.sourceContent !== undefined) {
+                        <div><h4>Source (Theirs)</h4><pre class="out">{{ cf.sourceContent }}</pre></div>
+                      }
+                      @if (cf.baseContent !== null && cf.baseContent !== undefined) {
+                        <div><h4>Base (Ancestor)</h4><pre class="out">{{ cf.baseContent }}</pre></div>
+                      }
+                    </div>
+                  </details>
+                }
+              </section>
+            } @empty {
+              <p class="muted">No conflicted file details found.</p>
+            }
+
+            @if (evidence().length) {
+              <details>
+                <summary class="small muted">Raw conflict evidence files</summary>
+                <div class="evidence">
+                  @for (e of evidence(); track e.name) { <div><h4>{{ e.name }}</h4><pre>{{ e.content }}</pre></div> }
+                </div>
+              </details>
+            }
           } @else { <p class="muted">No open conflict.</p> }
         }
         @case ('validation') {
@@ -80,19 +143,34 @@ type Tab = 'summary' | 'findings' | 'classification' | 'conflict' | 'validation'
           <section class="card">
             <h3>Approval</h3>
             @if (r.approval; as a) {
-              <p>Approved by {{ a.approvedBy }} at {{ a.approvedAt }}</p>
+              <p>Approved by {{ a.approvedBy }} at {{ a.approvedAt }} @if (a.validationOverridden) { <span class="chip s-REVIEW_REQUIRED">validation overridden</span> }</p>
               <p class="small">Binding: <code>{{ a.binding }}</code></p>
             } @else {
-              <p class="muted small">Approval binds the exact candidate SHA, target remote, branch, report hash, policy and target base.</p>
+              <p class="muted small">Approval binds the exact candidate SHA (<fb-sha [sha]="r.candidateSha" [len]="12" />), target remote, branch, report hash, policy and target base.</p>
               @if (reviewItems().length) {
-                <p><b>Explicit decisions required:</b></p>
+                <div class="row" style="justify-content: space-between">
+                  <b>Explicit decisions required:</b>
+                  <button class="small" (click)="acceptAllReviewItems()">Accept all review items</button>
+                </div>
                 @for (f of reviewItems(); track f.id) {
                   <label class="block"><input type="checkbox" [checked]="accept().includes(f.id)" (change)="toggleAccept(f.id)"> accept <code>{{ f.id }}</code> — {{ f.title }}</label>
                 }
               }
-              <label>Type the first 10 characters of the candidate SHA to approve
-                <input [(ngModel)]="confirmSha" [placeholder]="(r.candidateSha ?? '').slice(0, 3) + '…'"></label>
-              <button class="primary" (click)="approve()" [disabled]="confirmSha.length < 10 || !!api.busy()">Approve candidate</button>
+              @if (r.status === 'VALIDATION_FAILED' || hasValidationFailure()) {
+                <label class="block warn" style="margin: 8px 0">
+                  <input type="checkbox" [(ngModel)]="overrideValidation">
+                  <b>Override validation failure / unavailable validation environment</b> and allow approving this candidate
+                </label>
+              }
+              <div class="row">
+                <label style="flex: 1">Type the first 10+ characters of the candidate SHA to approve
+                  <input [(ngModel)]="confirmSha" [placeholder]="(r.candidateSha ?? '').slice(0, 10)">
+                </label>
+                @if (r.candidateSha) {
+                  <button class="small" (click)="confirmSha = r.candidateSha!.slice(0, 12)">Fill SHA ({{ r.candidateSha.slice(0, 10) }})</button>
+                }
+              </div>
+              <button class="primary" (click)="approve()" [disabled]="confirmSha.trim().length < 10 || !!api.busy()">Approve candidate</button>
             }
           </section>
           <section class="card">
@@ -120,15 +198,18 @@ export class RunPage implements OnInit {
   plan = signal<Plan | null>(null);
   workspaceExists = signal(false);
   evidence = signal<{ name: string; content: string }[]>([]);
+  conflictFiles = signal<ConflictFileDetail[]>([]);
+  customContents: Record<string, string> = {};
   diffLines = signal<string[]>([]);
   accept = signal<string[]>([]);
-  confirmSha = ''; createPr = false; trust = false;
+  confirmSha = ''; createPr = false; trust = false; overrideValidation = false;
 
   allFindings = computed(() => {
     const seen = new Set<string>();
     return [...(this.plan()?.findings ?? []), ...(this.run()?.findings ?? [])].filter((f) => !seen.has(f.id) && !!seen.add(f.id));
   });
   reviewItems = computed(() => this.allFindings().filter((f) => f.requiresReview && !f.blocking));
+  hasValidationFailure = computed(() => (this.run()?.validationComparison ?? []).some((v) => v.required && v.verdict !== 'PASS' && v.verdict !== 'SKIPPED'));
   published = computed(() => (this.run()?.publications ?? []).some((p) => p.pushed));
   resultCommits = computed(() => Object.entries(this.run()?.resultCommits ?? {}));
 
@@ -140,8 +221,41 @@ export class RunPage implements OnInit {
     this.run.set(r.run); this.plan.set(r.plan); this.workspaceExists.set(r.workspaceExists);
     if (r.run.conflict) {
       this.evidence.set(await this.api.get(`/runs/${this.id()}/evidence`));
+      const cfs = await this.api.get<ConflictFileDetail[]>(`/runs/${this.id()}/conflict-files`);
+      this.conflictFiles.set(cfs);
+      for (const cf of cfs) {
+        if (this.customContents[cf.file] === undefined) {
+          this.customContents[cf.file] = cf.workingTree ?? cf.sourceContent ?? cf.targetContent ?? '';
+        }
+      }
       this.tab.set('conflict');
     }
+  }
+
+  fillEditor(file: string, content: string) {
+    this.customContents[file] = content;
+  }
+
+  async resolveFile(file: string, resolution: 'target' | 'source' | 'custom' | 'exclude', content?: string) {
+    const updated = await this.api.run(`Resolving ${file} (${resolution})`, () =>
+      this.api.post<ConflictFileDetail[]>(`/runs/${this.id()}/resolve-conflict`, { file, resolution, content })
+    );
+    if (updated) {
+      this.conflictFiles.set(updated);
+      const resolvedEntry = updated.find((cf) => cf.file === file);
+      if (resolvedEntry) {
+        this.customContents[file] = resolvedEntry.workingTree ?? '';
+      }
+      for (const cf of updated) {
+        if (this.customContents[cf.file] === undefined) {
+          this.customContents[cf.file] = cf.workingTree ?? cf.sourceContent ?? cf.targetContent ?? '';
+        }
+      }
+    }
+  }
+
+  acceptAllReviewItems() {
+    this.accept.set(this.reviewItems().map((f) => f.id));
   }
 
   lineClass(l: string) {
@@ -157,7 +271,11 @@ export class RunPage implements OnInit {
     if (await this.api.run('Cleaning up', () => this.api.post(`/runs/${this.id()}/cleanup`))) this.router.navigate(['/runs']);
   }
   async approve() {
-    await this.api.run('Approving', () => this.api.post(`/runs/${this.id()}/approve`, { candidate: this.confirmSha.trim(), accept: this.accept() }));
+    await this.api.run('Approving', () => this.api.post(`/runs/${this.id()}/approve`, {
+      candidate: this.confirmSha.trim(),
+      accept: this.accept(),
+      overrideValidation: this.overrideValidation,
+    }));
     await this.load();
   }
   async publish() {

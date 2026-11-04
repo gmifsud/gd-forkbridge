@@ -1,0 +1,22 @@
+# yaml-language-server: $schema=../schema/forkbridge.alignment.schema.json
+# Example alignment (Harmony) profile. Repository aliases must exist in forkbridge.yml (repositories:).
+# Keep real profiles - which name product paths and branches - next to your state directory, not in this repo.
+version: 1
+stateDir: "D:/ForkBridge/state/alignment"
+profiles:
+  backend:
+    primary: { repo: primary-backend, label: Primary, legacyName: Backend, historyRefs: [origin/main], referenceRef: origin/main,
+               session: { baseRef: origin/main, newBranch: chore/fork-alignment, targetBranch: main } }
+    fork:    { repo: fork-backend, label: Fork, legacyName: Isl,
+               session: { baseRef: origin/main, newBranch: chore/upstream-alignment, targetBranch: main } }
+    syncBase: "0000000"                # the primary commit the fork last synchronised from
+    scope: [Shared.Kernel, Directory.Packages.props]
+    protected: [Shared.Kernel/Host]    # never read, never written
+    forkOwned: ["*/_Fork/*", "*.Fork.cs"]
+    formatInsensitive: [.cs, .csproj, .props, .json]
+    rules: { manifestPrecedence: first, formatGated: false, behindDetection: false }
+    manifest: { kind: directoryPackagesProps, files: ["Directory.Packages.props", "*/Directory.Packages.props"] }
+    references: { analyzer: csharp }
+    overrides:
+      - { pattern: "*/packages.lock.json", decision: KEEP_BOTH, reason: "derived; regenerate per repository" }
+    neverPush: [main, master]

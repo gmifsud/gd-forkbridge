@@ -107,20 +107,49 @@ export interface Drift {
   sourceChangedSinceBaseline: string[]; preservedProductDifferences: string[];
 }
 export interface Plan {
-  id: string; createdAt: string; pair: string; fromProduct: string; toProduct: string; mode: string;
+  id: string; parentPlanId?: string; createdAt: string; pair: string; fromProduct: string; toProduct: string; mode: string;
   source: { alias: string; remoteUrlRedacted?: string }; target: { alias: string; remoteUrlRedacted?: string };
   sourceRef?: string; sourceBaseRef?: string; targetBaseRef: string; sourceHeadSha: string; sourceBaseSha?: string; targetBaseSha: string;
-  mergeBase?: string; mergeBaseExplanation?: string; selectedComponents: string[]; commits: PlannedCommit[]; reconciliation?: PlannedCommit;
+  mergeBase?: string; mergeBaseExplanation?: string; selectedComponents: string[]; allowProposed?: boolean; reapply?: string[];
+  commits: PlannedCommit[]; reconciliation?: PlannedCommit;
   drift: Drift[]; findings: Finding[]; policyHash: string; freshness: { offline: boolean; note?: string; fetchedAt?: string };
   preliminaryStatus: string; impact?: { affectedProjects: string[]; sharedConsumers: string[]; productConsumers: string[]; frontendConsumers: string[]; notes: string[] };
+  pathOverrides?: Record<string, string>; overriddenFindings?: string[]; acceptedFindings?: string[];
 }
 export interface ValidationCmp { stepId: string; baseline: string; candidate: string; verdict: string; required: boolean; }
 export interface ValidationResult { stepId: string; outcome: string; reason?: string; outputTail?: string; durationSeconds: number; }
+export interface ConflictFileDetail {
+  file: string; sourcePath?: string; workingTree?: string; hasConflictMarkers: boolean;
+  baseContent?: string; targetContent?: string; sourceContent?: string; nothingApplied: boolean; isBinary?: boolean;
+}
+export interface PlanFileDiff {
+  planId: string;
+  requestedPath: string;
+  sourcePath: string;
+  targetPath: string;
+  component?: string;
+  decision?: string;
+  reason?: string;
+  existsInSource: boolean;
+  existsInTarget: boolean;
+  existsInBaseline: boolean;
+  isBinary: boolean;
+  identical: boolean;
+  sourceLastCommit?: string;
+  targetLastCommit?: string;
+  targetToSourceDiff: string;
+  baselineToTargetDiff: string;
+  baselineToSourceDiff: string;
+  commitDiff: string;
+  sourceContent?: string;
+  targetContent?: string;
+  baselineContent?: string;
+}
 export interface Run {
   id: string; planId: string; bundleId?: string; status: string; startedAt: string; finishedAt?: string; branch: string; candidateSha?: string;
   candidateWorktree: string; workspaceDir: string; resultCommits: Record<string, string>; findings: Finding[];
   conflict?: { operation: string; files: string[]; evidenceDir?: string; output?: string; instructions: string[] };
   validationComparison: ValidationCmp[]; candidateValidation: ValidationResult[]; baselineValidation: ValidationResult[];
-  candidateDiffStat?: string; approval?: { binding: string; approvedBy: string; approvedAt: string; acceptedFindings: string[] };
+  candidateDiffStat?: string; approval?: { binding: string; approvedBy: string; approvedAt: string; acceptedFindings: string[]; validationOverridden?: boolean };
   publications: { at: string; branch: string; pushed: boolean; pullRequestUrl?: string; error?: string }[]; log: string[];
 }

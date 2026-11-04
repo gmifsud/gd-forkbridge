@@ -1,0 +1,79 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "https://forkbridge.local/schema/forkbridge.alignment.schema.json",
+  "title": "ForkBridge alignment (Harmony) configuration",
+  "type": "object",
+  "required": ["version", "stateDir", "profiles"],
+  "additionalProperties": false,
+  "properties": {
+    "version": { "const": 1 },
+    "stateDir": { "type": "string", "description": "Harness-owned state (scratch repos, plans, ledgers). Must be outside every repository." },
+    "profiles": { "type": "object", "additionalProperties": { "$ref": "#/definitions/profile" } }
+  },
+  "definitions": {
+    "decision": { "enum": ["TAKE_PRIMARY", "TAKE_BE", "TAKE_FE", "TAKE_FORK", "TAKE_ISL", "MERGED", "DELETE_BOTH", "KEEP_FORK_ONLY", "KEEP_ISL_ONLY", "KEEP_BOTH", "MANIFEST_UNION", "PACKAGES_UNION", "MANUAL"] },
+    "side": {
+      "type": "object",
+      "required": ["repo", "label"],
+      "additionalProperties": false,
+      "properties": {
+        "repo": { "type": "string", "description": "Repository alias from forkbridge.yml (repositories:)." },
+        "label": { "type": "string", "description": "Display label, e.g. QiSL or ISL." },
+        "legacyName": { "type": "string", "description": "Name used by the PS suites in plan.tsv: Backend, Frontend, Isl." },
+        "worktreeRoot": { "type": "string" },
+        "historyRefs": { "type": "array", "items": { "type": "string" } },
+        "referenceRef": { "type": "string" },
+        "azure": { "type": "object", "additionalProperties": false, "properties": { "organization": { "type": "string" }, "project": { "type": "string" }, "repo": { "type": "string" } } },
+        "session": {
+          "type": "object", "additionalProperties": false,
+          "properties": {
+            "baseRef": { "type": "string" }, "newBranch": { "type": "string" }, "targetBranch": { "type": "string" },
+            "mergeRefs": { "type": "array", "items": { "type": "string" } }
+          }
+        }
+      }
+    },
+    "buildStep": { "type": "object", "required": ["name", "exe"], "additionalProperties": false,
+      "properties": { "name": { "type": "string" }, "exe": { "type": "string" }, "args": { "type": "array", "items": { "type": "string" } } } },
+    "profile": {
+      "type": "object",
+      "required": ["primary", "fork", "scope"],
+      "additionalProperties": false,
+      "properties": {
+        "primary": { "$ref": "#/definitions/side" },
+        "fork": { "$ref": "#/definitions/side" },
+        "syncBase": { "type": "string", "pattern": "^[0-9a-f]{7,40}$" },
+        "scope": { "type": "array", "minItems": 1, "items": { "type": "string" } },
+        "protected": { "type": "array", "items": { "type": "string" } },
+        "forkOwned": { "type": "array", "items": { "type": "string" }, "description": "PowerShell -clike patterns." },
+        "formatInsensitive": { "type": "array", "items": { "type": "string", "pattern": "^\\." } },
+        "rules": { "type": "object", "additionalProperties": false, "properties": {
+          "manifestPrecedence": { "enum": ["first", "afterBehind"] }, "formatGated": { "type": "boolean" }, "behindDetection": { "type": "boolean" } } },
+        "manifest": { "type": "object", "additionalProperties": false, "properties": {
+          "kind": { "enum": ["directoryPackagesProps", "packageJson"] },
+          "files": { "type": "array", "items": { "type": "string" } },
+          "sections": { "type": "array", "items": { "type": "string" } },
+          "versionOverrides": { "type": "object", "additionalProperties": { "type": "string" } } } },
+        "references": { "type": "object", "additionalProperties": false, "properties": { "analyzer": { "enum": ["csharp", "typescript"] } } },
+        "overrides": { "type": "array", "items": { "type": "object", "required": ["pattern", "decision"], "additionalProperties": false,
+          "properties": { "pattern": { "type": "string" }, "decision": { "$ref": "#/definitions/decision" }, "reason": { "type": "string" } } } },
+        "guards": { "type": "array", "items": { "type": "object", "required": ["name", "pattern"], "additionalProperties": false,
+          "properties": { "name": { "type": "string" }, "side": { "enum": ["primary", "fork", "both"] }, "pattern": { "type": "string" },
+            "include": { "type": "array", "items": { "type": "string" } } } } },
+        "builds": { "type": "object", "additionalProperties": false, "properties": {
+          "trusted": { "type": "boolean" },
+          "primary": { "type": "array", "items": { "$ref": "#/definitions/buildStep" } },
+          "fork": { "type": "array", "items": { "$ref": "#/definitions/buildStep" } },
+          "restoreAfterBuild": { "type": "array", "items": { "type": "string" } },
+          "warnDirtyAfterBuild": { "type": "array", "items": { "type": "string" } } } },
+        "neverPush": { "type": "array", "items": { "type": "string" } },
+        "commitTrailer": { "type": "string" },
+        "ledger": { "type": "string", "description": "Sync ledger JSON (nextSyncBase entries) used as SyncBase candidates." },
+        "advisor": { "type": "object", "additionalProperties": false, "properties": {
+          "revertWeight": { "type": "integer", "minimum": 0 }, "mergeWeight": { "type": "integer", "minimum": 0 }, "conflictWeight": { "type": "integer", "minimum": 0 },
+          "overlayThreshold": { "type": "integer", "minimum": 1 }, "maxCommitsPerLine": { "type": "integer", "minimum": 10 },
+          "maxWindowDays": { "type": "integer", "minimum": 7 }, "maxCandidates": { "type": "integer", "minimum": 2 } } }
+      }
+    }
+  }
+}

@@ -1,0 +1,15 @@
+Subject: [PATCH] fix(wf): declare ProcessFlowRule_Code max length 10 to match migration 20260817190500
+
+The hand-written migration widened the column to nvarchar(10) but the model
+and snapshot stayed at 4, so the next scaffold would shrink it. This aligns
+the attribute; regenerate WFDbContextModelSnapshot afterwards (see plan step 9).
+
+diff --git a/QiSL.App.WF/src/QiSL.App.WF.Core/Entities/ProcessFlowRules/ProcessFlowRule.cs b/QiSL.App.WF/src/QiSL.App.WF.Core/Entities/ProcessFlowRules/ProcessFlowRule.cs
+--- a/QiSL.App.WF/src/QiSL.App.WF.Core/Entities/ProcessFlowRules/ProcessFlowRule.cs
++++ b/QiSL.App.WF/src/QiSL.App.WF.Core/Entities/ProcessFlowRules/ProcessFlowRule.cs
+@@ -15,7 +15,7 @@
+ 
+         [Required]
+-        [QiSLCode]
++        [QiSLCode(10)]
+         public virtual string ProcessFlowRule_Code { get; set; }

@@ -32,7 +32,11 @@ public static class Program
 
         try
         {
-            var cfgPath = a.Get("config") ?? Environment.GetEnvironmentVariable("FORKBRIDGE_CONFIG") ?? "forkbridge.yml";
+            var cfgPath = a.Get("config") ?? Environment.GetEnvironmentVariable("FORKBRIDGE_CONFIG")
+                ?? (File.Exists("forkbridge.yml") ? "forkbridge.yml"
+                    : File.Exists(Path.Combine(AppContext.BaseDirectory, "forkbridge.yml")) ? Path.Combine(AppContext.BaseDirectory, "forkbridge.yml")
+                    : "forkbridge.yml");
+            if (a.Command == "align") return await AlignCommands.GuardedAsync(a, cfgPath, stdout, stderr, ct);
             if (a.Command == "validate-config")
             {
                 var c = ConfigLoader.Load(cfgPath);
@@ -89,6 +93,25 @@ public static class Program
                     await Emit(plan, Summaries.Plan(plan, md));
                     return plan.PreliminaryStatus == RunStatus.PLANNED ? ExitCodes.Ok : ExitCodes.For(plan.PreliminaryStatus);
                 }
+                case "resolve-plan":
+                {
+                    var pathOverrides = new Dictionary<string, Decision>(StringComparer.Ordinal);
+                    foreach (var p in a.GetMany("exclude")) pathOverrides[p] = Decision.Exclude;
+                    foreach (var p in a.GetMany("include")) pathOverrides[p] = Decision.Include;
+                    var plan = await engine.Planner.ResolvePlanAsync(a.Require("plan"), new PlanResolutionRequest
+                    {
+                        PathOverrides = pathOverrides,
+                        OverrideFindings = a.GetMany("override"),
+                        AcceptFindings = a.GetMany("accept"),
+                        Reapply = a.Has("reapply") ? a.GetMany("reapply") : null,
+                        UnblockAll = a.Has("unblock-all"),
+                        DefaultFileDecision = a.Get("default-decision") == "include" ? Decision.Include : Decision.Exclude,
+                    }, ct);
+                    var md = Path.Combine(engine.Store.PlanDir(plan.Id), "plan.md");
+                    await File.WriteAllTextAsync(md, ReportWriter.PlanMarkdown(plan), ct);
+                    await Emit(plan, Summaries.Plan(plan, md));
+                    return plan.PreliminaryStatus == RunStatus.PLANNED ? ExitCodes.Ok : ExitCodes.For(plan.PreliminaryStatus);
+                }
                 case "simulate":
                 {
                     var run = await engine.Simulator.SimulateAsync(a.Require("plan"), Opts(a), ct);
@@ -123,7 +146,7 @@ public static class Program
                 }
                 case "approve":
                 {
-                    var appr = await engine.Publisher.ApproveAsync(a.Require("run"), a.Require("candidate"), a.GetMany("accept"), WhoAmI(), ct);
+                    var appr = await engine.Publisher.ApproveAsync(a.Require("run"), a.Require("candidate"), a.GetMany("accept"), WhoAmI(), ct, a.Has("override-validation"));
                     await Emit(appr, $"Approved.\n  binding: {appr.Binding}");
                     return ExitCodes.Ok;
                 }
@@ -141,7 +164,7 @@ public static class Program
                             cand = Console.ReadLine()?.Trim() ?? "";
                             if (cand.Length < 10) throw new ArgumentException("Approval cancelled.");
                         }
-                        await engine.Publisher.ApproveAsync(runId, cand, a.GetMany("accept"), WhoAmI(), ct);
+                        await engine.Publisher.ApproveAsync(runId, cand, a.GetMany("accept"), WhoAmI(), ct, a.Has("override-validation"));
                     }
                     var rec = await engine.Publisher.PublishAsync(runId, a.Has("create-pr"), ct);
                     await Emit(rec, $"Pushed {rec.CandidateSha[..10]} to new branch '{rec.Branch}'.{(rec.PullRequestUrl is null ? "" : $"\nPull request: {rec.PullRequestUrl}")}{(rec.Error is null ? "" : $"\nNote: {rec.Error}")}");
@@ -228,9 +251,9 @@ public sealed class Args
     public string? Command { get; private init; }
     public List<string> Positional { get; } = new();
     private readonly Dictionary<string, List<string>> _opts = new();
-    private static readonly HashSet<string> Multi = ["commits", "components", "accept", "plans", "reapply"];
+    private static readonly HashSet<string> Multi = ["commits", "components", "accept", "plans", "reapply", "exclude", "include", "override"];
     private static readonly HashSet<string> Flags = ["json", "help", "offline", "fetch", "allow-proposed", "prefer-local", "trust-validation", "preserve-workspace",
-        "skip-validation", "approve", "create-pr", "all-finished"];
+        "skip-validation", "approve", "create-pr", "all-finished", "override-validation", "unblock-all", "preview"];
 
     public static Args Parse(string[] argv)
     {

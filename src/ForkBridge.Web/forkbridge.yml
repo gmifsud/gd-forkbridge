@@ -117,6 +117,8 @@ pairs:
         - "backups/**"
         - "worktrees/**"
         - "**/QiSL.Platform.Web.Host.Vam/**"        # VAM host project name, VERIFIED in ISL's project list
+        - "**/QiSL.Platform.Web.ISL.Host/**"        # ISL host project inside Platform, product-specific
+        - "**/QiSL.Platform.Web.ThirdParty.ISL.Host/**"
         - "solutions/QiSL.Platform.Web.VAM.sln"
         - "solutions/QiSL.Platform.Web - NL.sln"
         - "solutions/QiSL.Platform.Web - Practice.sln"
@@ -137,6 +139,8 @@ pairs:
         - "**/appsettings*.json"                   # VERIFIED: 14 appsettings locations in ISL
         - "**/launchSettings.json"
         - "azure-pipelines*.yml"                   # VERIFIED: ISL pipeline still references QiSL-only test projects
+        - "pipelines/**"
+        - "global.json"
         - "nuget.config"
         - "nuget.pipelines.config"
         - "**/ExternalServicesConfig.json"         # per-product external-service metadata. >>> FILL IN: delete this line if it SHOULD sync
@@ -179,11 +183,12 @@ pairs:
       - ".dotnet-cli-home/**"
       - "CLAUDE.md"
       - "AGENTS.md"
+      - "QiSL.Fabric/Kernel/QiSL.Platform.SharedKernel.Application/Dtos/Accounts/TenantResolutionFailureReason.cs"
       # Anything else that changes and is not listed in this file BLOCKS the transfer (by design).
 
     validation:
       default:
-        trusted: false   # >>> FILL IN: set true once you have reviewed the commands below (they run your build scripts)
+        trusted: true   # >>> FILL IN: set true once you have reviewed the commands below (they run your build scripts)
         steps:
           # Runs in the TARGET repo (baseline = target base, candidate = target base + transfer), so every
           # command must work in BOTH repositories.

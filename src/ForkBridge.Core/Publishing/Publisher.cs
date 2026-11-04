@@ -47,7 +47,7 @@ public sealed class Publisher
                ?? throw new PublishRefusedException($"Target checkout has no remote '{repo.Remote}'.");
     }
 
-    public async Task<ApprovalRecord> ApproveAsync(string runId, string candidatePrefix, IEnumerable<string> accept, string approvedBy, CancellationToken ct = default)
+    public async Task<ApprovalRecord> ApproveAsync(string runId, string candidatePrefix, IEnumerable<string> accept, string approvedBy, CancellationToken ct = default, bool overrideValidation = false)
     {
         var run = _store.LoadRun(runId);
         var plan = _store.LoadPlan(run.PlanId);
@@ -55,10 +55,11 @@ public sealed class Publisher
         if (candidatePrefix.Length < 7 || !run.CandidateSha.StartsWith(candidatePrefix, StringComparison.OrdinalIgnoreCase))
             throw new PublishRefusedException($"Approval must name the exact candidate SHA (at least 7 characters). Candidate is {run.CandidateSha}.", ExitCodes.UsageError);
         var accepted = accept.ToList();
+        if (overrideValidation && !accepted.Contains("OVERRIDE_VALIDATION")) accepted.Add("OVERRIDE_VALIDATION");
         var known = plan.Findings.Concat(run.Findings).Select(f => f.Id).ToHashSet();
-        var unknown = accepted.Where(a => !known.Contains(a)).ToList();
+        var unknown = accepted.Where(a => !known.Contains(a) && a != "OVERRIDE_VALIDATION").ToList();
         if (unknown.Count > 0) throw new PublishRefusedException($"Unknown finding id(s): {string.Join(", ", unknown)}", ExitCodes.UsageError);
-        var status = StatusEvaluator.ForRun(plan, run, plan.AcceptedFindings.Concat(accepted));
+        var status = StatusEvaluator.ForRun(plan, run, plan.AcceptedFindings.Concat(accepted), overrideValidation);
         if (status != RunStatus.READY)
         {
             var open = plan.Findings.Concat(run.Findings).Where(f => f.Blocking || (f.RequiresReview && !accepted.Contains(f.Id))).Select(f => $"{f.Id} {f.Title}");
@@ -70,11 +71,11 @@ public sealed class Publisher
         {
             CandidateSha = run.CandidateSha, TargetRemoteRedacted = Redactor.Redact(url), Branch = run.Branch,
             ReportSha256 = ReportWriter.ReportHash(_store, run.Id), PolicyHash = plan.PolicyHash, TargetBaseSha = plan.TargetBaseSha,
-            AcceptedFindings = accepted, ApprovedBy = approvedBy, ApprovedAt = DateTimeOffset.UtcNow,
+            AcceptedFindings = accepted, ValidationOverridden = overrideValidation, ApprovedBy = approvedBy, ApprovedAt = DateTimeOffset.UtcNow,
         };
         run.Approval = approval;
         run.Status = RunStatus.READY;
-        run.Log.Add($"approved by {approvedBy}: {approval.Binding}");
+        run.Log.Add($"approved by {approvedBy}{(overrideValidation ? " (validation overridden)" : "")}: {approval.Binding}");
         _store.SaveRun(run);
         return approval;
     }

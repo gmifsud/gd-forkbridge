@@ -18,17 +18,20 @@ public sealed class PatchBuilder
         ["-c", "core.quotePath=false", "-c", "diff.noprefix=false", "-c", "diff.mnemonicPrefix=false", "-c", "diff.relative=false",
          "diff", "--binary", "--full-index", "--no-color", "--no-ext-diff", "--no-textconv", "--src-prefix=a/", "--dst-prefix=b/"];
 
+    private const string EmptyTreeSha1 = "4b825dc642cb6eb9a060e54bf8d69288fbee4904";
+
     /// <summary>Patch for one decision (handles add/modify/delete and renames as a pair).</summary>
     public async Task<byte[]> FilePatchAsync(string from, string to, PathDecision d)
     {
+        var effectiveFrom = d.Reason.Contains("[restore-in-target]", StringComparison.Ordinal) ? EmptyTreeSha1 : from;
         var args = new List<string>(DiffOpts);
-        if (d.SourceOldPath is not null && d.Status == 'R')
+        if (d.SourceOldPath is not null && d.Status == 'R' && effectiveFrom == from)
         {
-            args.AddRange(["-M", "--find-renames=1%", from, to, "--", d.SourceOldPath, d.SourcePath]);
+            args.AddRange(["-M", "--find-renames=1%", effectiveFrom, to, "--", d.SourceOldPath, d.SourcePath]);
         }
         else
         {
-            args.AddRange(["--no-renames", from, to, "--", d.SourcePath]);
+            args.AddRange(["--no-renames", effectiveFrom, to, "--", d.SourcePath]);
         }
         var r = await _git.CheckedAsync(_mirror, args);
         var bytes = r.StdOutBytes;

@@ -10,11 +10,15 @@ namespace ForkBridge.Core.Planning;
 public static class DriftAnalyzer
 {
     public static async Task<List<ComponentDrift>> AnalyzeAsync(GitClient git, string mirror, PairConfig pair, string from, string to,
-        string sourceSnapshot, string targetSnapshot, string? baseline, IEnumerable<ComponentConfig> components)
+        string sourceSnapshot, string targetSnapshot, string? baseline, IEnumerable<ComponentConfig> components,
+        IReadOnlyDictionary<string, Decision>? pathOverrides = null)
     {
         var result = new List<ComponentDrift>();
         var srcCls = new PathClassifier(pair, from, asTarget: false);
         var tgtCls = new PathClassifier(pair, to, asTarget: true);
+        bool IsExcludedByOverride(string srcOrTgtPath)
+            => Planner.TryGetPathOverride(pathOverrides, srcOrTgtPath, out var ov, out _) && ov == Decision.Exclude;
+
         foreach (var c in components)
         {
             var sp = c.Paths.GetValueOrDefault(from);
@@ -39,16 +43,19 @@ public static class DriftAnalyzer
             var mappedSrc = new Dictionary<string, (string srcPath, string blob)>();
             foreach (var (path, blob) in srcFiles)
             {
+                if (IsExcludedByOverride(path)) continue;
                 var sc = srcCls.Classify(path);
                 if (sc.Class != PathClass.Shared || sc.ComponentId != c.Id) continue; // nested product-specific/generated/ignored
-                mappedSrc[PathClassifier.MapPath(c, from, to, path)!] = (path, blob);
+                var mapped = PathClassifier.MapPath(c, from, to, path)!;
+                if (IsExcludedByOverride(mapped)) continue;
+                mappedSrc[mapped] = (path, blob);
             }
             foreach (var (tpath, (spath, sblob)) in mappedSrc)
             {
                 if (!tgtFiles.TryGetValue(tpath, out var tblob)) { onlySrc.Add(tpath); continue; }
                 if (tblob == sblob) { identical++; continue; }
                 var tc = tgtCls.Classify(tpath);
-                if (tc.Class is PathClass.TargetPinned or PathClass.ProductSpecific) { preserved.Add($"{tpath} ({tc.Class})"); continue; }
+                if (tc.Class is PathClass.TargetPinned or PathClass.ProductSpecific or PathClass.Ignored) { preserved.Add($"{tpath} ({tc.Class})"); continue; }
                 differing.Add(tpath);
                 var bs = baseSrc.GetValueOrDefault(spath);
                 if (bs is not null && bs != sblob) srcChanged.Add(tpath);
@@ -64,9 +71,10 @@ public static class DriftAnalyzer
             }
             foreach (var tpath in tgtFiles.Keys)
             {
+                if (IsExcludedByOverride(tpath)) continue;
                 var tc = tgtCls.Classify(tpath);
                 if (mappedSrc.ContainsKey(tpath)) continue;
-                if (tc.Class is PathClass.TargetPinned or PathClass.ProductSpecific) { preserved.Add($"{tpath} ({tc.Class})"); continue; }
+                if (tc.Class is PathClass.TargetPinned or PathClass.ProductSpecific or PathClass.Ignored) { preserved.Add($"{tpath} ({tc.Class})"); continue; }
                 if (tc.Class == PathClass.Shared && tc.ComponentId == c.Id) onlyTgt.Add(tpath);
             }
             result.Add(new ComponentDrift
@@ -97,7 +105,7 @@ public static class DriftAnalyzer
                 {
                     Id = Finding.MakeId("PREEXISTING_DIVERGENCE", d.Component, string.Join(",", d.TargetDivergedSinceBaseline)), Code = "PREEXISTING_DIVERGENCE",
                     Category = "drift", Severity = Severity.Info, Origin = Origin.PreExisting, Component = d.Component,
-                    Files = d.TargetDivergedSinceBaseline.Take(50).ToList(),
+                    Files = d.TargetDivergedSinceBaseline.Take(500).ToList(),
                     Title = $"{d.TargetDivergedSinceBaseline.Count} shared file(s) in '{d.Component}' were changed in the target since the baseline",
                     Evidence = ["These differences existed before this transfer; three-way application preserves them unless a hunk overlaps (then it conflicts - never auto-resolved)."],
                 };
@@ -110,7 +118,7 @@ public static class DriftAnalyzer
                     {
                         Id = Finding.MakeId("ANCESTRY_CONTENT_MISMATCH", d.Component, sourceHead, targetBase), Code = "ANCESTRY_CONTENT_MISMATCH",
                         Category = "drift", Severity = Severity.Warning, Origin = Origin.PreExisting, Component = d.Component, RequiresReview = true,
-                        Files = suspicious.Take(50).ToList(),
+                        Files = suspicious.Take(500).ToList(),
                         Title = "Source is an ancestor of the target, yet shared content differs",
                         Evidence = [$"merge-base(source, target) = source head {sourceHead[..10]}: ancestry claims full integration.",
                                     $"{suspicious.Count} shared file(s) still differ - typical after a filtered/pinned fork-over merge discarded content."],
@@ -121,7 +129,7 @@ public static class DriftAnalyzer
                 yield return new Finding
                 {
                     Id = Finding.MakeId("TARGET_ONLY_SHARED_FILES", d.Component, string.Join(",", d.OnlyInTarget)), Code = "TARGET_ONLY_SHARED_FILES",
-                    Category = "drift", Severity = Severity.Info, Origin = Origin.PreExisting, Component = d.Component, Files = d.OnlyInTarget.Take(50).ToList(),
+                    Category = "drift", Severity = Severity.Info, Origin = Origin.PreExisting, Component = d.Component, Files = d.OnlyInTarget.Take(500).ToList(),
                     Title = $"{d.OnlyInTarget.Count} file(s) exist only in the target copy of '{d.Component}'",
                     Evidence = ["Not touched by this transfer; consider classifying them as product-specific if intentional."],
                 };
