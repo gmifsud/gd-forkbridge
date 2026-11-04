@@ -21,7 +21,7 @@ public enum MergeErrorKind { Usage, NotFound, Refused, Stale, Safety, GitFailure
 /// credential helpers work; they never run merge machinery.</summary>
 public sealed class MergeGit
 {
-    public const int MinMajor = 2, MinMinor = 38;
+    public const int MinMajor = 2, MinMinor = 40;
 
     /// <summary>The merge configuration used by both analysis (merge-tree) and the session (merge). It is part of
     /// every plan's options fingerprint and of the approval binding.</summary>
@@ -45,6 +45,7 @@ public sealed class MergeGit
     private readonly string _envDir;
     private readonly string _hooksDir;
     private readonly string _globalConfig;
+    private readonly string _attributesFile;
 
     public MergeGit(GitClient git, StateStore store)
     {
@@ -52,6 +53,7 @@ public sealed class MergeGit
         _envDir = Path.Combine(store.Root, "merge", "env");
         _hooksDir = Path.Combine(_envDir, "hooks-empty");
         _globalConfig = Path.Combine(_envDir, "gitconfig");
+        _attributesFile = Path.Combine(_envDir, "attributes-empty");
         store.Fs.AssertNoLinksBetweenRootAndPath(_envDir);
         Directory.CreateDirectory(_hooksDir);
         foreach (var f in Directory.GetFileSystemEntries(_hooksDir))
@@ -60,6 +62,9 @@ public sealed class MergeGit
         const string body = "# ForkBridge merge workspace: isolated git configuration (do not add filters, drivers or hooks)\n" +
                             "[core]\n\tautocrlf = false\n\tsafecrlf = false\n[advice]\n\tdetachedHead = false\n";
         if (!File.Exists(_globalConfig) || File.ReadAllText(_globalConfig) != body) File.WriteAllText(_globalConfig, body);
+        // GIT_CONFIG_GLOBAL does not disable the default global attributes file ($XDG_CONFIG_HOME/git/attributes):
+        // core.attributesFile points at this empty harness file instead.
+        if (!File.Exists(_attributesFile) || new FileInfo(_attributesFile).Length != 0) File.WriteAllText(_attributesFile, "");
     }
 
     public static string OptionsFingerprint(string gitVersion)
@@ -83,17 +88,28 @@ public sealed class MergeGit
         foreach (var (k, v) in PinnedOptions)
             if (k != "strategy") { yield return "-c"; yield return $"{k}={v}"; }
         yield return "-c"; yield return "core.hooksPath=" + _hooksDir;
+        yield return "-c"; yield return "core.attributesFile=" + _attributesFile;
     }
 
     public string HooksDir => _hooksDir;
 
-    /// <summary>Runs git isolated. Does not throw on a non-zero exit (callers interpret exit codes).</summary>
+    /// <summary>Runs git isolated. Does not throw on a non-zero exit (callers interpret exit codes).
+    /// <paramref name="attrSource"/> (a commit) makes git read .gitattributes from that tree (`--attr-source`), so the
+    /// bare-mirror analysis and the worktree merge see exactly the same attributes.</summary>
     public Task<ProcessResult> RunAsync(string dir, IEnumerable<string> args, byte[]? stdin = null,
-        IReadOnlyDictionary<string, string?>? extraEnv = null, CancellationToken ct = default)
+        IReadOnlyDictionary<string, string?>? extraEnv = null, CancellationToken ct = default, string? attrSource = null)
     {
         var env = new Dictionary<string, string?>(IsolatedEnv);
         if (extraEnv is not null) foreach (var (k, v) in extraEnv) env[k] = v;
-        return Git.RunAsync(dir, ConfigArgs().Concat(args), env, stdin, ct: ct);
+        var pre = attrSource is null ? [] : new[] { "--attr-source=" + attrSource };
+        return Git.RunAsync(dir, pre.Concat(ConfigArgs()).Concat(args), env, stdin, ct: ct);
+    }
+
+    /// <summary>`diff-tree -r -z --raw --numstat -M` in the isolated environment (no user diff/rename settings).</summary>
+    public async Task<IReadOnlyList<FileChange>> DiffTreeAsync(string dir, string from, string to, CancellationToken ct = default)
+    {
+        var r = await CheckedAsync(dir, ["-c", "diff.renameLimit=0", "diff-tree", "-r", "-z", "--no-commit-id", "--raw", "--numstat", "-M", from, to], ct: ct);
+        return FileChange.ParseRawNumstatZ(r.StdOutBytes);
     }
 
     public async Task<ProcessResult> CheckedAsync(string dir, IEnumerable<string> args, byte[]? stdin = null,

@@ -108,14 +108,42 @@ public sealed class ResolutionService
         }
         if (s.Resolutions.TryGetValue(entry.Id, out var r))
             return (r.Result is null ? null : await _git.ReadBlobAsync(mirror, r.Result.Sha, ct), "resolved");
-        // Unresolved: Git's own merge output in the workspace (with conflict markers for text conflicts).
-        var file = Path.Combine(s.Worktree, entry.Path.Replace('/', Path.DirectorySeparatorChar));
-        if (Directory.Exists(s.Worktree) && EntryClassifier.PathProblem(entry.Path) is null)
+        // Unresolved: the merge output in REPOSITORY form. The worktree file Git wrote has been through checkout
+        // conversions (.gitattributes eol/text/working-tree-encoding/ident); storing edits of those bytes would commit
+        // converted content. So the result is rebuilt from the recorded stage blobs, never read from the worktree.
+        return (await UnresolvedResultAsync(s, entry, ct), "unresolved");
+    }
+
+    private async Task<byte[]?> UnresolvedResultAsync(MergeSession s, MergeEntry e, CancellationToken ct)
+    {
+        var mirror = _ws.Mirror(s);
+        switch (e.Conflict)
         {
-            _store.Core.Fs.AssertNoLinksBetweenRootAndPath(file);
-            if (File.Exists(file)) return (await File.ReadAllBytesAsync(file, ct), "unresolved");
+            case ConflictKind.Content or ConflictKind.AddAdd when !e.Binary && e.Target is not null && e.Source is not null:
+                var tmp = Path.Combine(s.WorkspaceDir, "tmp");
+                _store.Core.Fs.AssertNoLinksBetweenRootAndPath(tmp);
+                Directory.CreateDirectory(tmp);
+                var stamp = Guid.NewGuid().ToString("N")[..12];
+                var (o, b, t) = (Path.Combine(tmp, stamp + ".target"), Path.Combine(tmp, stamp + ".base"), Path.Combine(tmp, stamp + ".source"));
+                try
+                {
+                    await File.WriteAllBytesAsync(o, await _git.ReadBlobAsync(mirror, e.Target.Sha, ct), ct);
+                    await File.WriteAllBytesAsync(b, e.Base is null ? [] : await _git.ReadBlobAsync(mirror, e.Base.Sha, ct), ct);
+                    await File.WriteAllBytesAsync(t, await _git.ReadBlobAsync(mirror, e.Source.Sha, ct), ct);
+                    // Same 3-way text merge and diff3 style as the session merge; exit code = number of conflicts.
+                    var r = await _git.RunAsync(tmp, ["merge-file", "-p", "--diff3", "-L", "target", "-L", "base", "-L", "source", o, b, t], ct: ct);
+                    if (r.ExitCode is < 0 or >= 128 || r.TimedOut || r.OutputTruncated)
+                        throw new MergeException("git merge-file failed: " + MergeGit.Trim(r.StdErr), MergeErrorKind.GitFailure);
+                    return r.StdOutBytes;
+                }
+                finally { foreach (var f in new[] { o, b, t }) if (File.Exists(f)) File.Delete(f); }
+            case ConflictKind.Content or ConflictKind.AddAdd or ConflictKind.Binary or ConflictKind.DeletedInSource:
+                return e.Target is null ? null : await _git.ReadBlobAsync(mirror, e.Target.Sha, ct); // what Git leaves: the target version
+            case ConflictKind.DeletedInTarget:
+                return e.Source is null ? null : await _git.ReadBlobAsync(mirror, e.Source.Sha, ct);
+            default:
+                return null;
         }
-        return (null, "unresolved");
     }
 
     private (bool, string?) EditState(MergeSession s, MergeEntry e, CodecInfo? codec, string? filter)

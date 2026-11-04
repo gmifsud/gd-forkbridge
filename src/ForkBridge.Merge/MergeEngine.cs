@@ -164,7 +164,11 @@ public sealed class MergeEngine
         var s = Store.LoadSession(sessionId);
         if (s.State is SessionState.Aborted or SessionState.Published) return (true, []);
         if (s.State == SessionState.Creating) return (false, ["workspace creation did not complete (interrupted or cancelled)"]);
-        var r = await Workspace.VerifyAsync(s, Store.LoadPlan(s.PlanId));
+        // The check refreshes the workspace index, so it runs under the session lock like every mutation. If another
+        // operation holds the session, the check is skipped rather than racing it.
+        using var held = Store.TryLockSession(sessionId);
+        if (held is null) return (true, []);
+        var r = await Workspace.VerifyAsync(Store.LoadSession(sessionId), Store.LoadPlan(s.PlanId));
         return (r.Ok, r.Problems);
     }
 }

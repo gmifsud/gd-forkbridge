@@ -15,7 +15,7 @@
 | `ANCESTRY_CONTENT_MISMATCH` | Earlier filtered merge. `plan --mode reconcile --baseline <sha before that merge>`. |
 | Conflict | Resolve in the **run workspace** printed in the report (never your checkout), remove markers, `forkbridge resume --run <id>`. Evidence: `state/runs/<id>/evidence/`. |
 | Web UI says Unauthorized | Open the exact URL printed by `forkbridge-web` (token in the `#` fragment); tokens change per launch. |
-| Merge: "needs git 2.38 or newer" | The Merge tab relies on `git merge-tree --write-tree`. Upgrade Git. |
+| Merge: "needs git 2.40 or newer" | The Merge tab relies on `git merge-tree --write-tree` and `--attr-source`. Upgrade Git. |
 | Merge: "changed since you loaded it" (409, exit 13) | Another tab or a later save changed the session. Click **Reload file**; your text stays in the editor until then. |
 | Merge: session **Damaged** | The harness workspace was modified or removed outside ForkBridge. **Recover** rebuilds it from the recorded resolutions. |
 | Merge: "target branch moved on the remote" | The approved merge is stale. Analyze again (the plan never re-resolves branches). |

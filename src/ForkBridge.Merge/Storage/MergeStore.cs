@@ -112,7 +112,24 @@ public sealed class MergeStore
     }
 
     /// <summary>Exclusive cross-process lock for one session's mutations.</summary>
-    public IDisposable LockSession(string id) => Core.Lock("merge-session-" + StateStore.Sanitize(id), TimeSpan.FromSeconds(30));
+    /// <summary>How long a mutation waits for the session lock before reporting "busy" (409).</summary>
+    internal TimeSpan LockWait { get; set; } = TimeSpan.FromSeconds(30);
+
+    public IDisposable LockSession(string id)
+    {
+        try { return Core.Lock("merge-session-" + StateStore.Sanitize(id), LockWait); }
+        catch (IOException)
+        {
+            throw new MergeException("The session is busy with another operation (for example a running validation). Retry when it finishes.", MergeErrorKind.Stale);
+        }
+    }
+
+    /// <summary>Non-blocking variant for read-only checks: null when another operation holds the session.</summary>
+    public IDisposable? TryLockSession(string id)
+    {
+        try { return Core.Lock("merge-session-" + StateStore.Sanitize(id), TimeSpan.Zero); }
+        catch (IOException) { return null; }
+    }
 
     public void WriteAtomic(string file, byte[] bytes)
     {

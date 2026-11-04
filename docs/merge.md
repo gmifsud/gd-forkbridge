@@ -89,7 +89,9 @@ UTF-16 with BOM are supported), mixed line endings, files above `merge.maxEditab
 as a truncated preview), and paths with a `filter=` attribute such as Git LFS (the stored pointer is shown).
 
 Edits keep the file's encoding, BOM, line-ending style (LF/CRLF), presence or absence of a final newline, and its
-file mode.
+file mode. The editor always works on the **repository form** of the content: an unresolved conflict is rebuilt from
+Git's stage blobs (`git merge-file --diff3`), never read from the worktree, where `.gitattributes` checkout conversions
+(`eol`, `working-tree-encoding`, `ident`) may have changed the bytes.
 
 ## Concurrency, recovery, abort
 
@@ -123,13 +125,15 @@ file mode.
 ## Publication
 
 * Pushes `forkbridge/merge/<target>/<session-id>` (prefix `merge.branchPrefix`) to the checkout's remote. Never the
-  target branch, never `+`/force, never a protected branch (`merge.protectedBranches`). Your local checkout is not
-  updated.
+  target branch, never `+`/force, never a protected branch (`merge.protectedBranches`). The push is create-only
+  (`--force-with-lease=<branch>:` with an empty expected value = "must not exist"), so a branch created concurrently
+  is refused rather than fast-forwarded. Your local checkout is not updated.
 * Before pushing, the remote target must still equal the pinned target SHA, otherwise publication is refused
   (analyze again). Source movement is reported, not merged: the plan stays pinned; analyze again to include newer
   source commits.
-* Retry is safe: if the integration branch already points at the approved candidate it is recorded as already
-  present; at any other commit publication is refused.
+* Retry is safe: the integration branch is checked first; if it already points at the approved candidate (a push whose
+  record was lost) it is recorded as already present, even if the target moved afterwards; at any other commit
+  publication is refused. A failed pull-request creation is retried by publishing again.
 * *Create a pull request* uses `publish.provider` (Azure DevOps today). A PR failure after a successful push is
   recorded; the branch stays published.
 
@@ -140,7 +144,8 @@ configuration (asserted by tests with a checkout that is itself mid-merge with s
 happens in `<stateDir>/mirrors/<alias>.git` and `<stateDir>/merge/`.
 
 Every analysis/workspace git call runs with an isolated configuration: no system or global git config
-(`GIT_CONFIG_NOSYSTEM=1`, harness `GIT_CONFIG_GLOBAL`), an empty harness hooks directory, `core.fsmonitor=false`,
+(`GIT_CONFIG_NOSYSTEM=1`, harness `GIT_CONFIG_GLOBAL`), no global attributes file (`core.attributesFile` = empty
+harness file), attributes read from the pinned target tree (`--attr-source`), an empty harness hooks directory, `core.fsmonitor=false`,
 literal pathspecs and no replace objects. Consequently user/system merge drivers, clean/smudge filters (including
 LFS), hooks and credential helpers never run there. Pinned merge configuration (part of the options fingerprint):
 
@@ -173,7 +178,7 @@ merge:
 
 ## Requirements
 
-Git **2.38+** (`merge-tree --write-tree`); older Git is refused with an explicit message.
+Git **2.40+** (`merge-tree --write-tree`, and `--attr-source` so the bare-mirror analysis and the worktree merge read the same `.gitattributes`); older Git is refused with an explicit message.
 
 ## API
 

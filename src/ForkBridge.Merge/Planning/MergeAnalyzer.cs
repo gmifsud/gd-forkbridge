@@ -73,7 +73,7 @@ public sealed class MergeAnalyzer
         }
         else
         {
-            var r = await _git.RunAsync(mirror, ["merge-tree", "--write-tree", "-z", "--messages", tgt.Sha, src.Sha], ct: ct);
+            var r = await _git.RunAsync(mirror, ["merge-tree", "--write-tree", "-z", "--messages", tgt.Sha, src.Sha], ct: ct, attrSource: tgt.Sha);
             if (r.ExitCode is not (0 or 1) || r.TimedOut || r.OutputTruncated)
                 throw new MergeException("git merge-tree failed (this is not a merge conflict): " + Redactor.Redact(MergeGit.Trim(r.StdErr)), MergeErrorKind.GitFailure);
             var mt = MergeTreeParser.Parse(r.StdOutBytes, clean: r.ExitCode == 0);
@@ -135,9 +135,9 @@ public sealed class MergeAnalyzer
     private async Task<List<MergeEntry>> CleanEntriesAsync(string mirror, string mergeBase, string target, string source, string resultTree,
         HashSet<string> conflicted, CancellationToken ct)
     {
-        var toResult = await _git.Git.DiffTreeAsync(mirror, target, resultTree);
-        var baseToTarget = await _git.Git.DiffTreeAsync(mirror, mergeBase, target);
-        var baseToSource = await _git.Git.DiffTreeAsync(mirror, mergeBase, source);
+        var toResult = await _git.DiffTreeAsync(mirror, target, resultTree, ct);
+        var baseToTarget = await _git.DiffTreeAsync(mirror, mergeBase, target, ct);
+        var baseToSource = await _git.DiffTreeAsync(mirror, mergeBase, source, ct);
         var tgtChanged = Index(baseToTarget);
         var srcChanged = Index(baseToSource);
         var list = new List<MergeEntry>();

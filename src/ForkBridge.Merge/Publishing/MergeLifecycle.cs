@@ -225,8 +225,9 @@ public sealed class MergeLifecycle
 
     public async Task<MergeSession> PublishAsync(MergeSession s, MergePlan plan, int expectedRevision, CancellationToken ct)
     {
-        if (s.State == SessionState.Published) return s; // idempotent: already recorded
-        if (s.State != SessionState.Approved || s.Approval is null || s.CandidateSha is null)
+        var prPending = s.Approval is { CreatePullRequest: true } && !s.Publications.Any(p => p.PullRequestUrl is not null);
+        if (s.State == SessionState.Published && !prPending) return s; // idempotent: already recorded
+        if (s.State is not (SessionState.Approved or SessionState.Published) || s.Approval is null || s.CandidateSha is null)
             throw new MergeException($"Only an approved session can be published (state {s.State}).", MergeErrorKind.Refused);
         CheckRevision(s, expectedRevision);
         var a = s.Approval;
@@ -239,47 +240,54 @@ public sealed class MergeLifecycle
         RefuseProtected(a.IntegrationBranch);
         var mirror = _ws.Mirror(s);
 
-        var remoteTarget = await RemoteHeadAsync(mirror, remote, plan.Target.Name, ct);
-        if (remoteTarget is null)
-            throw new MergeException($"The target branch '{plan.Target.Name}' does not exist on the remote; cannot publish an integration branch for it.", MergeErrorKind.Refused);
-        if (remoteTarget != plan.Target.Sha)
-            throw new MergeException($"The target branch moved on the remote ({plan.Target.Sha[..10]} → {remoteTarget[..10]}). The approved merge is stale: analyze again.", MergeErrorKind.Stale);
+        // The integration branch is checked first: if the approved candidate is already there (a push whose record was
+        // lost), the retry only records it - target movement after that push does not make the publication stale.
+        var existing = await RemoteHeadAsync(mirror, remote, a.IntegrationBranch, ct);
+        if (existing is not null && existing != s.CandidateSha)
+            throw new MergeException($"Remote branch '{a.IntegrationBranch}' already exists at a different commit. ForkBridge never force-pushes.", MergeErrorKind.Refused);
         string? sourceMoved = null;
         if (plan.Source.Namespace != RefNamespace.Local)
         {
             var rs = await RemoteHeadAsync(mirror, remote, plan.Source.Name, ct);
             if (rs is not null && rs != plan.Source.Sha) sourceMoved = rs;
         }
-
-        var existing = await RemoteHeadAsync(mirror, remote, a.IntegrationBranch, ct);
         MergePublication rec;
-        if (existing is not null && existing != s.CandidateSha)
-            throw new MergeException($"Remote branch '{a.IntegrationBranch}' already exists at a different commit. ForkBridge never force-pushes.", MergeErrorKind.Refused);
         if (existing == s.CandidateSha)
             rec = new MergePublication { At = DateTimeOffset.UtcNow, Branch = a.IntegrationBranch, CandidateSha = s.CandidateSha, Pushed = true, AlreadyPresent = true, SourceMovedTo = sourceMoved };
         else
         {
-            // No '+' in the refspec: git itself rejects anything but creating the branch. No hooks run.
-            var push = await _git.Git.RunAsync(mirror, ["-c", "core.hooksPath=" + _git.HooksDir, "push", "--porcelain", "--no-verify", remote,
+            var remoteTarget = await RemoteHeadAsync(mirror, remote, plan.Target.Name, ct);
+            if (remoteTarget is null)
+                throw new MergeException($"The target branch '{plan.Target.Name}' does not exist on the remote; cannot publish an integration branch for it.", MergeErrorKind.Refused);
+            if (remoteTarget != plan.Target.Sha)
+                throw new MergeException($"The target branch moved on the remote ({plan.Target.Sha[..10]} → {remoteTarget[..10]}). The approved merge is stale: analyze again.", MergeErrorKind.Stale);
+            // Create-only: no '+' in the refspec, and a lease whose expected value is empty means "the branch must not
+            // exist" - so a branch created concurrently (even at an ancestor) is refused, never fast-forwarded. No hooks run.
+            var push = await _git.Git.RunAsync(mirror, ["-c", "core.hooksPath=" + _git.HooksDir, "push", "--porcelain", "--no-verify",
+                $"--force-with-lease=refs/heads/{a.IntegrationBranch}:", remote,
                 $"{s.CandidateSha}:refs/heads/{a.IntegrationBranch}"], timeout: TimeSpan.FromMinutes(15), ct: ct);
             rec = new MergePublication { At = DateTimeOffset.UtcNow, Branch = a.IntegrationBranch, CandidateSha = s.CandidateSha, Pushed = push.Success,
                 SourceMovedTo = sourceMoved, Error = push.Success ? null : Redactor.Redact(MergeGit.Trim(push.StdErr)) };
         }
-        if (rec.Pushed && a.CreatePullRequest && !s.Publications.Any(p => p.PullRequestUrl is not null))
+        if (rec.Pushed && prPending)
         {
-            try
+            if (_pr is null) rec = rec with { Error = "Branch published; no pull request provider is configured (publish.provider)." };
+            else
             {
-                var desc = $"ForkBridge merge of `{plan.Source.Name}` ({plan.Source.Sha[..10]}) into `{plan.Target.Name}` ({plan.Target.Sha[..10]}).\n\n" +
-                           $"Session `{s.Id}` · Plan `{plan.Id}` · Candidate `{s.CandidateSha}`\n\n{s.Resolutions.Count} conflict(s) resolved; validation `{a.ValidationId}`{(a.ValidationWaived ? " (waived)" : "")}.";
-                var url = await _pr!.CreateAsync(remote, a.IntegrationBranch, plan.Target.Name, $"[ForkBridge] Merge {plan.Source.Name} into {plan.Target.Name}", desc, _cfg.Publish.Draft, ct);
-                rec = rec with { PullRequestUrl = url };
+                try
+                {
+                    var desc = $"ForkBridge merge of `{plan.Source.Name}` ({plan.Source.Sha[..10]}) into `{plan.Target.Name}` ({plan.Target.Sha[..10]}).\n\n" +
+                               $"Session `{s.Id}` · Plan `{plan.Id}` · Candidate `{s.CandidateSha}`\n\n{s.Resolutions.Count} conflict(s) resolved; validation `{a.ValidationId}`{(a.ValidationWaived ? " (waived)" : "")}.";
+                    var url = await _pr.CreateAsync(remote, a.IntegrationBranch, plan.Target.Name, $"[ForkBridge] Merge {plan.Source.Name} into {plan.Target.Name}", desc, _cfg.Publish.Draft, ct);
+                    rec = rec with { PullRequestUrl = url };
+                }
+                catch (Exception ex) { rec = rec with { Error = "Branch published; pull request creation failed (publish again to retry it): " + Redactor.Redact(ex.Message) }; }
             }
-            catch (Exception ex) { rec = rec with { Error = "Branch published; pull request creation failed: " + Redactor.Redact(ex.Message) }; }
         }
         s.Publications.Add(rec);
         s.Revision++;
         if (rec.Pushed) s.State = SessionState.Published;
-        _store.Audit(s, rec.Pushed ? $"published {rec.Branch}{(rec.AlreadyPresent ? " (already present: retry)" : "")}{(rec.PullRequestUrl is null ? "" : " PR " + rec.PullRequestUrl)}" : "publish failed: " + rec.Error);
+        _store.Audit(s, rec.Pushed ? $"published {rec.Branch}{(rec.AlreadyPresent ? " (already present: retry)" : "")}{(rec.PullRequestUrl is null ? "" : " PR " + rec.PullRequestUrl)}{(rec.Error is null ? "" : " - " + rec.Error)}" : "publish failed: " + rec.Error);
         _store.SaveSession(s);
         if (!rec.Pushed) throw new MergeException("Push failed: " + rec.Error, MergeErrorKind.GitFailure);
         return s;

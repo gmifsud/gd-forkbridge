@@ -93,7 +93,7 @@ public sealed class SessionWorkspace
             await _git.CheckedAsync(mirror, ["update-ref", $"refs/fb/merge/sessions/{s.Id}/source", plan.Source.Sha], ct: ct);
         }
         var merge = await _git.RunAsync(s.Worktree, ["merge", "--no-ff", "--no-commit", "--no-verify", "--no-edit", "--no-log",
-            "--strategy=ort", "--no-allow-unrelated-histories", plan.Source.Sha], extraEnv: IdentityEnv(s), ct: ct);
+            "--strategy=ort", "--no-allow-unrelated-histories", plan.Source.Sha], extraEnv: IdentityEnv(s), ct: ct, attrSource: plan.Target.Sha);
         if (merge.ExitCode is not (0 or 1))
             throw new MergeException("git merge failed in the session workspace (not a conflict): " + Redactor.Redact(MergeGit.Trim(merge.StdErr + "\n" + merge.StdOut)), MergeErrorKind.GitFailure);
         var mh = await _git.TryRevParseAsync(s.Worktree, "MERGE_HEAD");
@@ -145,7 +145,7 @@ public sealed class SessionWorkspace
             if (result.Mode is not ("100644" or "100755")) throw new MergeException($"Refusing to stage mode {result.Mode} for '{path}'.", MergeErrorKind.Refused);
             var info = Encoding.UTF8.GetBytes($"0 {new string('0', result.Sha.Length)}\t{path}\n{result.Mode} {result.Sha} 0\t{path}\n");
             await _git.CheckedAsync(s.Worktree, ["update-index", "--index-info"], info, ct: ct);
-            await _git.CheckedAsync(s.Worktree, ["checkout-index", "--force", "--quiet", "--", path], ct: ct);
+            await _git.CheckedAsync(s.Worktree, ["checkout-index", "--force", "--quiet", "-u", "--", path], ct: ct);
         }
         var now = await IndexEntriesAsync(s, path);
         var ok = result is null ? now.Count == 0 : now.Count == 1 && now[0].Stage == 0 && now[0].Sha == result.Sha && now[0].Mode == result.Mode;

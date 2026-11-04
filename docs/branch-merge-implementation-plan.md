@@ -116,7 +116,7 @@ New:
 | Deviation | Reason |
 |---|---|
 | Development and verification ran in a cloud Linux workspace; the branch is delivered as a git bundle into the local checkout instead of being created there directly | the local machine's shell lacks .NET and its git (2.34) predates `merge-tree --write-tree`; git writes through that bridge cannot delete lock files and would leave `.lock` files in the user's `.git` |
-| Merge requires git ≥ 2.38 (refused otherwise with an explicit message) | `merge-tree --write-tree` is the only machine-readable, worktree-free merge analysis; approximating it would violate "Git is the source of truth" |
+| Merge requires git ≥ 2.40 (refused otherwise with an explicit message) | `merge-tree --write-tree` is the only machine-readable, worktree-free merge analysis; `--attr-source` (2.40) makes it read the target tree's `.gitattributes` exactly like the worktree merge |
 | Plain `<textarea>` editor, no editor library | no editor dependency exists; a library adds bundle, worker/CSP and licence cost not needed for whole-file editing. Revisit with per-hunk controls |
 | No frontend unit-test framework added; pure UI logic is tested with Node's built-in runner and component behaviour with a Playwright smoke script | avoids adding vitest/karma dependencies; Playwright is not added to `package.json` (script documents how to run it) |
 | Fast-forwardable merges produce a `--no-ff` merge commit candidate | consistent, reviewable integration branch; "already merged" is detected separately and creates nothing |
@@ -142,9 +142,26 @@ Verification (Linux, .NET SDK 10.0.100, git 2.43, Node 22, PowerShell 7.4):
 | Check | Result |
 |---|---|
 | `dotnet build ForkBridge.slnx` | 0 warnings, 0 errors |
-| `dotnet test ForkBridge.slnx` | 201/201 (Core 76, Alignment 72, Merge 53) |
+| `dotnet test ForkBridge.slnx` | 207/207 (Core 76, Alignment 72, Merge 59) |
 | `ui: npm run build` / `npm run typecheck` / `npm test` | ok / ok / 7/7 |
 | `pwsh examples/demo/New-ForkBridgeMergeDemo.ps1` + `ui/e2e/merge-smoke.mjs` against `forkbridge-web` | all 10 steps passed; demo checkout byte-identical before/after; integration branch on origin with parents `[develop, feature/checkout]` |
 | Harmony / New plan / History screens | render, no console errors |
+
+### Independent review
+
+A separate reviewer audited the engine without seeing these notes. Findings and fixes (each with a regression test in
+`tests/ForkBridge.Merge.Tests/ReviewRegressionTests.cs`; the attribute and conversion tests were confirmed to fail with
+their fix reverted):
+
+| Sev. | Finding | Fix |
+|---|---|---|
+| critical | edited conflicts were built from worktree bytes after `.gitattributes` checkout conversion (e.g. `eol=crlf`), committing converted content and leaving the session permanently Damaged | unresolved results are rebuilt in repository form from stage blobs (`git merge-file -p --diff3`); views no longer read the worktree |
+| high | `merge-tree` in the bare mirror ignored the target's `.gitattributes`, the worktree merge honoured them | `--attr-source=<target>` on both (git ≥ 2.40) |
+| high | default global attributes file still applied in the isolated environment | `core.attributesFile` = empty harness file |
+| high | `GET /sessions/{id}` refreshed the index without the session lock | read check takes the session lock non-blockingly and is skipped while busy; `checkout-index -u` keeps stat fresh |
+| medium | publish retry checked target movement before "already pushed" | integration branch checked first |
+| medium | lock files deleted on release (two holders possible on Unix) | `StateStore.Lock` keeps lock files (Core, one-line change) |
+| medium | one analysis diff used the user's diff configuration | `diff-tree` through the isolated environment |
+| low | push without `+` could fast-forward a concurrently created branch; failed PR never retried; busy lock → 500 | create-only lease; PR-only retry; busy → 409 |
 
 Not verified here: Windows host (path/junction behaviour, case-insensitive collision blocking, git for Windows), real Azure DevOps PR creation, the real QiSL repositories.

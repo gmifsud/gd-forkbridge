@@ -48,7 +48,7 @@ Requirements (pinned):
 | Tool | Version | Why |
 |---|---|---|
 | .NET SDK | 10.0.1xx+ (`global.json`, rollForward latestFeature) | .NET 10 is the current LTS; .NET 8 support ends Nov 2026 |
-| Git | ≥ 2.38 recommended (≥ 2.30 works) | `merge-tree --write-tree` for merge-resolution checks; older Git blocks merge commits instead of guessing. The Merge tab requires ≥ 2.38 |
+| Git | ≥ 2.38 recommended (≥ 2.30 works) | `merge-tree --write-tree` for merge-resolution checks; older Git blocks merge commits instead of guessing. The Merge tab requires ≥ 2.40 |
 | Node.js / npm | ≥ 20.19 / npm 10.9 (only to rebuild the UI) | Angular 21.2.23, TypeScript 5.9.3, exact versions in `ui/package.json` |
 | PowerShell 7 | for the demo and publish scripts | |
 

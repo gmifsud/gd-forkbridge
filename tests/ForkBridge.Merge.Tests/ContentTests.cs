@@ -144,6 +144,7 @@ public class ContentTests
         await Assert.ThrowsAnyAsync<Exception>(() => m.ResolveAsync(s.Id,
             new ResolveRequest(view.Entry.Id, ResolutionAction.EditResult, view.SessionRevision, view.ResultContentHash, "a\nX\n"), CancellationToken.None));
         Assert.Equal("outside\n", File.ReadAllText(Path.Combine(outside, "f.txt")));
-        await Assert.ThrowsAnyAsync<Exception>(() => MergeFixture.FileAsync(m, s.Id, plan, "dir/f.txt"));
+        await MergeFixture.FileAsync(m, s.Id, plan, "dir/f.txt"); // views read repository objects, never the worktree
+        Assert.Equal("outside\n", File.ReadAllText(Path.Combine(outside, "f.txt")));
     }
 }

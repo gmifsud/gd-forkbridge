@@ -141,7 +141,9 @@ public sealed class StateStore
         var deadline = DateTime.UtcNow + (wait ?? TimeSpan.FromMinutes(5));
         while (true)
         {
-            try { return new FileStream(path, FileMode.OpenOrCreate, FileAccess.ReadWrite, FileShare.None, 1, FileOptions.DeleteOnClose); }
+            // The lock file is persistent: deleting it on release would let a waiter lock the unlinked inode while a
+            // newcomer locks a fresh file (two holders on Unix, where FileShare.None maps to an advisory flock).
+            try { return new FileStream(path, FileMode.OpenOrCreate, FileAccess.ReadWrite, FileShare.None, 1, FileOptions.None); }
             catch (IOException) when (DateTime.UtcNow < deadline) { Thread.Sleep(200); }
         }
     }
