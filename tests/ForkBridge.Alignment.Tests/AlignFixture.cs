@@ -43,6 +43,16 @@ public sealed class AlignFixture : IDisposable
     public ResolvedProfile Profile(string name = "backend")
         => AlignmentConfigLoader.Resolve(AlignmentConfigLoader.Load(AlignConfig), ConfigLoader.Load(FbConfig), name);
 
+    /// <summary>The clone's local branch is the primary's `Development`; the fork works on `development`. On a
+    /// case-insensitive filesystem (Windows, macOS) loose refs that differ only by case are the same file, so the clone's
+    /// branch is dropped before `development` is created (origin/Development stays as the remote-tracking ref).</summary>
+    private void ForkOnDevelopment()
+    {
+        G(Fork, "checkout", "-q", "--detach");
+        G(Fork, "branch", "-q", "-D", "Development");
+        G(Fork, "checkout", "-q", "-b", "development");
+    }
+
     public static string G(string dir, params string[] args)
     {
         var psi = new ProcessStartInfo("git") { WorkingDirectory = dir, RedirectStandardOutput = true, RedirectStandardError = true, UseShellExecute = false };
@@ -96,7 +106,7 @@ public sealed class AlignFixture : IDisposable
         SyncBase = Commit(Primary, "base (primary deleted the stale files)");
 
         G(Root, "clone", "-q", "--no-local", Primary, Fork);
-        G(Fork, "checkout", "-q", "-b", "development");
+        ForkOnDevelopment();
 
         // primary moves on
         W(Primary, "Shared/A.cs", "namespace S;\npublic class A { int x = 2; }\n");                 // BE_CHANGED
@@ -131,7 +141,7 @@ public sealed class AlignFixture : IDisposable
         W(Primary, "app/package.json", "{\n  \"name\": \"app\",\n  \"dependencies\": {\n    \"rxjs\": \"7.8.2\"\n  }\n}\n");
         SyncBase = Commit(Primary, "base");
         G(Root, "clone", "-q", "--no-local", Primary, Fork);
-        G(Fork, "checkout", "-q", "-b", "development");
+        ForkOnDevelopment();
         W(Primary, "app/src/a.service.ts", "export class AService { v = 2; }\n");
         var mid = Commit(Primary, "a v2");
         W(Primary, "app/src/a.service.ts", "export class AService { v = 3; }\n");
