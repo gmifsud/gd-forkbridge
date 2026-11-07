@@ -4,20 +4,21 @@ import { Api } from '../api';
 import { BusyVeil } from '../harmony/busy-veil';
 import { MergeApi } from './merge-api';
 import { MergeFileList } from './merge-file-list';
+import { RefLookup } from './ref-lookup';
 import { MergeFilter, namespaceLabel, outcomeLabel, rows, short } from './merge-logic';
-import type { MergePlan, RefInfo, RefListing, RefNamespace, RefSelection, RepositorySummary } from './merge-models';
+import type { MergePlan, RefInfo, RefListing, RefSelection, RepositorySummary } from './merge-models';
 
 /** Merge tab: pick one configured repository, a source and a target branch (with explicit ref provenance), analyze
  *  the merge at pinned commits, review the outcome and changed files, then start an isolated merge session.
  *  URL state: /merge?alias=&plan= so a reload returns to the same analysis. */
 @Component({
   selector: 'fb-merge-page',
-  imports: [RouterLink, MergeFileList, BusyVeil],
+  imports: [RouterLink, MergeFileList, BusyVeil, RefLookup],
   styles: [`
     :host { display: block; position: relative; }
     .sel { display: grid; grid-template-columns: 220px 1fr 1fr; gap: 12px; align-items: end; }
     @media (max-width: 1000px) { .sel { grid-template-columns: 1fr; } }
-    .refpick select { width: 100%; }
+    .refpick label { margin: 6px 0 3px; }
     .prov { font-size: 11.5px; color: var(--muted); margin-top: 3px; min-height: 16px; }
     .hdr { font-size: 14px; margin: 6px 0; }
     .hdr code { font-size: 12px; }
@@ -44,20 +45,16 @@ import type { MergePlan, RefInfo, RefListing, RefNamespace, RefSelection, Reposi
               @for (r of repos(); track r.alias) { <option [value]="r.alias" [disabled]="r.placeholder">{{ r.alias }}{{ r.placeholder ? ' (placeholder)' : '' }}</option> }
             </select>
           </label>
-          <label class="refpick">Source (merged from)
-            <select [value]="key(source())" (change)="source.set(parse($any($event.target).value)); persist()" aria-label="Source branch" [disabled]="!listing()?.refs?.length">
-              <option value="">— source branch —</option>
-              @for (g of groups(); track g.ns) { <optgroup [label]="nsLabel(g.ns)">@for (r of g.refs; track r.name) { <option [value]="g.ns + ':' + r.name">{{ r.name }}</option> }</optgroup> }
-            </select>
+          <div class="refpick"><label for="merge-source">Source (merged from)</label>
+            <fb-ref-lookup inputId="merge-source" label="Source branch" [refs]="listing()?.refs ?? []" [value]="source()" [disabled]="!listing()?.refs?.length"
+              (valueChange)="source.set($event); persist()" />
             <div class="prov">@if (source(); as s) { {{ nsLabel(s.namespace) }} · <code>{{ sh(shaOf(s)) }}</code> }</div>
-          </label>
-          <label class="refpick">Target (merged into)
-            <select [value]="key(target())" (change)="target.set(parse($any($event.target).value)); persist()" aria-label="Target branch" [disabled]="!listing()?.refs?.length">
-              <option value="">— target branch —</option>
-              @for (g of groups(); track g.ns) { <optgroup [label]="nsLabel(g.ns)">@for (r of g.refs; track r.name) { <option [value]="g.ns + ':' + r.name">{{ r.name }}</option> }</optgroup> }
-            </select>
+          </div>
+          <div class="refpick"><label for="merge-target">Target (merged into)</label>
+            <fb-ref-lookup inputId="merge-target" label="Target branch" [refs]="listing()?.refs ?? []" [value]="target()" [disabled]="!listing()?.refs?.length"
+              (valueChange)="target.set($event); persist()" />
             <div class="prov">@if (target(); as t) { {{ nsLabel(t.namespace) }} · <code>{{ sh(shaOf(t)) }}</code> }</div>
-          </label>
+          </div>
         </div>
         <div class="row">
           <button type="button" (click)="refresh(false)" [disabled]="!alias()">Refresh refs</button>
@@ -121,11 +118,6 @@ export class MergePage implements OnInit {
   readonly filter = signal<MergeFilter>('all');
   readonly query = signal('');
 
-  readonly groups = computed(() => {
-    const refs = this.listing()?.refs ?? [];
-    const order: RefNamespace[] = ['Remote', 'Local', 'CheckoutRemote'];
-    return order.map((ns) => ({ ns, refs: refs.filter((r) => r.namespace === ns).sort((a, b) => a.name.localeCompare(b.name)) })).filter((g) => g.refs.length);
-  });
   readonly same = computed(() => this.key(this.source()) === this.key(this.target()));
   readonly canAnalyze = computed(() => !!this.alias() && !!this.source() && !!this.target() && !this.same());
   readonly outcome = computed(() => outcomeLabel(this.plan()?.outcome ?? 'Blocked'));
@@ -144,7 +136,6 @@ export class MergePage implements OnInit {
   }
 
   key(s: RefSelection | null) { return s ? `${s.namespace}:${s.name}` : ''; }
-  parse(v: string): RefSelection | null { const i = v.indexOf(':'); return i > 0 ? { namespace: v.slice(0, i) as RefNamespace, name: v.slice(i + 1) } : null; }
   shaOf(s: RefSelection): string | undefined { return this.listing()?.refs.find((r: RefInfo) => r.namespace === s.namespace && r.name === s.name)?.sha; }
 
   async pickRepo(alias: string, ui = this.m.loadUi()) {

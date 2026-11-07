@@ -33,9 +33,26 @@ step('navigation: Merge tab');
 
 await page.selectOption('select[aria-label="Repository"]', 'demo-shop');
 await page.getByRole('button', { name: 'Refresh refs', exact: true }).click();
-await page.locator('select[aria-label="Source branch"] option[value="Remote:feature/checkout"]').waitFor({ state: 'attached' });
-await page.selectOption('select[aria-label="Source branch"]', 'Remote:feature/checkout');
-await page.selectOption('select[aria-label="Target branch"]', 'Remote:develop');
+// Searchable lookup: type to narrow, pick with Enter (keyboard) or a click; scrolling never selects.
+const pickRef = async (id, terms, ref) => {
+  const box = page.locator(`#${id}`);
+  await box.click();
+  await box.fill(terms);
+  await page.locator(`#${id}-list li[data-ref="${ref}"]`).waitFor();
+  await page.locator(`#${id}-list li[data-ref="${ref}"]`).click();
+  await page.waitForFunction(([i, v]) => document.getElementById(i)?.value === v, [id, ref.split(':')[1]]);
+};
+await page.locator('#merge-source:not([disabled])').waitFor();
+await page.locator('#merge-source').click();
+assert.ok(await page.locator('#merge-source-list li.hdr', { hasText: 'REMOTE (FETCHED BY FORKBRIDGE)' }).count() > 0);
+await page.keyboard.press('Escape');
+await pickRef('merge-source', 'checkout', 'Remote:feature/checkout');
+// keyboard path: type, Enter picks the first match
+await page.locator('#merge-target').click();
+await page.keyboard.type('develop');
+await page.locator('#merge-target-list li.active[data-ref="Remote:develop"]').waitFor();
+await page.keyboard.press('Enter');
+await page.waitForFunction(() => document.getElementById('merge-target')?.value === 'develop');
 assert.match(await page.locator('.prov').first().innerText(), /remote \(fetched by ForkBridge\)/);
 step('selection with provenance');
 
