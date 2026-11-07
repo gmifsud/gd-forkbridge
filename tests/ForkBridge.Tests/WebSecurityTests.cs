@@ -47,14 +47,19 @@ public class WebSecurityTests
         var start = await http.SendAsync(Req(HttpMethod.Post, "/api/plans", JsonSerializer.Serialize(new { pair = "backend", from = "qisl", to = "isl", mode = "feature", sourceRef = "feat/web" })));
         Assert.Equal(HttpStatusCode.OK, start.StatusCode);
         var jobId = (await start.Content.ReadFromJsonAsync<JsonElement>()).GetProperty("jobId").GetString();
-        JsonElement job = default;
-        for (int i = 0; i < 100; i++)
+        // Bounded by time, not iterations: the plan job fetches both repositories into the harness mirrors, which on
+        // Windows under a parallel test run (process creation, Defender) can take well over the ~10 s it needs alone.
+        var deadline = DateTime.UtcNow + TimeSpan.FromMinutes(2);
+        JsonElement job;
+        do
         {
             job = await (await http.SendAsync(Req(HttpMethod.Get, $"/api/jobs/{jobId}"))).Content.ReadFromJsonAsync<JsonElement>();
             if (job.GetProperty("state").GetString() != "running") break;
-            await Task.Delay(200);
-        }
-        Assert.Equal("succeeded", job.GetProperty("state").GetString());
+            await Task.Delay(250);
+        } while (DateTime.UtcNow < deadline);
+        var state = job.GetProperty("state").GetString();
+        Assert.True(state == "succeeded",
+            $"plan job {state}: {(job.TryGetProperty("error", out var err) ? err.GetString() : "still running at the deadline")}");
         var planId = job.GetProperty("result").GetProperty("planId").GetString();
         var plan = await (await http.SendAsync(Req(HttpMethod.Get, $"/api/plans/{planId}"))).Content.ReadFromJsonAsync<JsonElement>();
         Assert.Equal("PLANNED", plan.GetProperty("preliminaryStatus").GetString());
